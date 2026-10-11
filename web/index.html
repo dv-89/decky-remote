@@ -18,14 +18,14 @@
       <section id="remotePane" role="tabpanel" aria-labelledby="remoteTab" class="card">
         <div class="control-heading"><h2>Keyboard & mouse</h2><button id="capture">Start control</button></div>
         <label for="mode">Control mode</label><select id="mode"><option value="mouse">Unlimited capture — Esc to release</option><option value="touchpad">Touchpad — drag to move</option></select>
-        <p id="captureHint" class="small">Press Escape once to release control. Use the Back button below to send Escape to Steam.</p>
-        <div id="pad" tabindex="0" role="application" aria-label="Remote keyboard and mouse. Press Escape once to release control."><span id="padTitle">Ready to control</span><small id="padHint">Press Start control to begin</small></div>
+        <p id="captureHint" class="small">Backspace sends Esc/Back to Steam. Shift + Backspace deletes text. Escape releases control.</p>
+        <div id="pad" tabindex="0" role="application" aria-label="Remote keyboard and mouse. Backspace sends Back. Shift plus Backspace deletes text. Escape releases control."><span id="padTitle">Ready to control</span><small id="padHint">Press Start control to begin</small></div>
         <div class="mouse-buttons"><button data-click="left">Left click</button><button data-click="middle">Middle</button><button data-click="right">Right click</button></div>
         <div class="navigation-controls">
           <div class="primary-keys"><button data-key="Escape">Back / Esc</button><button data-key="Enter">Enter</button><button data-key="Backspace">⌫ Delete</button></div>
           <div class="direction-pad" aria-label="Arrow keys"><button data-key="ArrowUp" class="up" aria-label="Arrow up">↑</button><button data-key="ArrowLeft" class="left" aria-label="Arrow left">←</button><button data-key="ArrowDown" class="down" aria-label="Arrow down">↓</button><button data-key="ArrowRight" class="right" aria-label="Arrow right">→</button></div>
         </div>
-        <details><summary>More keys & help</summary><div class="extra-keys"><button data-key="Tab">Tab</button><button id="showDesktop">Super + D</button></div><p class="small">Unlimited capture hides your laptop cursor. Press Escape once to release control. Touchpad works by dragging. The Back button sends Escape to the handheld. Switching windows releases control. Windows and browser shortcuts may stay local.</p></details>
+        <details><summary>More keys & help</summary><div class="extra-keys"><button data-key="Tab">Tab</button><button id="showDesktop">Super + D</button></div><p class="small">Unlimited capture hides your laptop cursor. Backspace sends Escape to the handheld while you stay in control; holding it sends just one Back press. Use Shift + Backspace or the Delete button to delete text. Press Escape once to release control. Touchpad works by dragging. Backspace edits normally in Send text. Switching windows releases control. Windows and browser shortcuts may stay local.</p></details>
       </section>
       <section id="textPane" role="tabpanel" aria-labelledby="textTab" class="card" hidden>
         <h2>Send text</h2><label for="text">Select a text field on the handheld first</label><textarea id="text" rows="5" maxlength="128" placeholder="Type here, then send to the handheld…"></textarea>

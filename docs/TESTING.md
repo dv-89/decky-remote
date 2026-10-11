@@ -12,6 +12,12 @@ For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and t
 
 For 0.1.2, TypeScript typecheck, Rollup build and the compiled-plugin check passed. All 16 Python backend/protocol/HTTP checks and 10 browser-client checks passed, including horizontal/diagonal scrolling, pixel/line/page units, fractional deltas, axis limits, pause resets, HTTP delivery and packed Linux horizontal-wheel events. Real horizontal scrolling on the handheld remains pending device validation.
 
+## Version 0.1.10
+
+Physical Backspace sends one Escape down/up pulse per press while remote control stays active. Holding it does not repeat Steam Back. Shift + Backspace forwards the Backspace key and its repeat events. Each physical press retains its chosen mapping until keyup; pause, focus loss, hiding or a tool change clears that mapping and releases held input. Physical Escape still pauses immediately, and Send text editing stays local.
+
+All 16 client checks pass, including three new regression checks for both capture modes, repeated Backspace, manual Delete, Shift changes during a held key, inactive text editing and mapping cleanup/restart. Hardware confirmation is still needed for Steam Back and deletion in the selected handheld app.
+
 ## Version 0.1.9
 
 Direct browser control is restored. Start control requests pointer lock only, without Keyboard Lock, fullscreen or a laptop helper. A single physical Escape pauses immediately, discards queued input and sends release; the on-screen Back button still sends Escape to Steam. Unlimited capture remains the laptop default and Touchpad remains the mobile default. Pad control stays removed.
@@ -68,6 +74,7 @@ All 23 Python checks pass in Ubuntu WSL, including real file copies and symlink 
 - On the laptop open that address. Try an incorrect code, then the correct one. Confirm Decky displays the laptop's IP and hides the consumed code.
 - In a harmless Steam search field, send `Hello, Legion! 123` and verify punctuation, case and digits with a US keyboard layout and Caps Lock off. Try the arrow, Enter, Backspace and Escape buttons.
 - Open the handheld address directly in the laptop browser and pair. Confirm the page has Unlimited capture and Touchpad choices, with no Pad control option or helper download. Start control must hide the laptop cursor without entering fullscreen. Physical mouse movement, clicks, drags, scrolling and typing must reach the handheld.
+- While captured, press Backspace: Steam receives Back and capture remains active. Hold it: only one Back is sent. In a text field, use Shift + Backspace and the on-screen Delete button to delete; held Shift + Backspace should repeat deletion. In Send text, Backspace should edit the local field normally.
 - Press physical Escape once: control pauses immediately and the laptop cursor returns without sending Back to Steam. Press the on-screen Back button: Steam receives Escape. Start control must work again after releasing Escape and clicking the button. Repeat in Touchpad mode.
 - In Desktop Mode, open a page or application with a horizontal scrollbar. In Full control, swipe two fingers left and right on the laptop trackpad and confirm horizontal scrolling reaches the handheld. Test vertical and diagonal scrolling, then repeat over the pad in Touchpad mode. Pause and resume between partial gestures to confirm there is no leftover scrolling. Steam Gaming Mode views may not respond to horizontal wheel input.
 - Hold a key/button and pause or switch windows. Verify pointer lock ends if used, the laptop cursor returns, and held inputs release immediately or within the three-second watchdog limit. Start control again and verify capture resumes.

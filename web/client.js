@@ -4,6 +4,7 @@ const pad = el("pad");
 let token = "", active = false, events = [], flushing = false, pairing = false;
 let serial = Promise.resolve(), drag = null, wheel = 0, wheelX = 0;
 let lockPending = false, lockTimer = null, captureRequest = 0;
+let backspaceKey = null;
 el("mode").value = window.matchMedia?.("(pointer: coarse)").matches ? "touchpad" : "mouse";
 const supported = new Set([
   ...Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ", letter => "Key" + letter),
@@ -25,9 +26,9 @@ function renderCapture() {
   pad.classList.toggle("active", active);
   el("capture").textContent = lockPending ? "Cancel control" : active ? "Pause control" : "Start control";
   el("mode").disabled = active || lockPending;
-  el("captureHint").textContent = lockPending ? "Waiting for mouse capture. Escape or Cancel control stops the request." : el("mode").value === "mouse" ? "Move and click freely. Press Escape once to release control. Use the Back button below to send Escape to Steam." : "Drag the pad to move. Press Escape once to pause. Use the Back button below to send Escape to Steam.";
+  el("captureHint").textContent = lockPending ? "Waiting for mouse capture. Escape or Cancel control stops the request." : (el("mode").value === "mouse" ? "Move and click freely. " : "Drag the pad to move. ") + "Backspace sends Esc/Back to Steam. Shift + Backspace deletes text. Escape releases control.";
   el("padTitle").textContent = active ? "You’re controlling the handheld" : "Ready to control";
-  el("padHint").textContent = active ? "Move · Click · Drag · Scroll · Type · Esc to pause" : "Press Start control to begin";
+  el("padHint").textContent = active ? "Backspace: Back · Shift + Backspace: delete · Esc: release" : "Press Start control to begin";
 }
 function setCapture(value) {
   active = value && !!token;
@@ -39,6 +40,7 @@ function setCapture(value) {
     captureRequest++;
     drag = null;
     wheel = wheelX = 0;
+    backspaceKey = null;
     events = token ? [{type:"release"}] : [];
     if (document.pointerLockElement === pad) document.exitPointerLock();
   }
@@ -56,11 +58,11 @@ function pauseControl() {
 function captureReady() {
   if (!lockPending || !token || document.hidden || document.pointerLockElement !== pad) return;
   setCapture(true);
-  status("Control is active. Press Escape once to release control.");
+  status("Control is active. Backspace goes back; Escape releases control.");
 }
 async function startControl() {
   if (!token || active || lockPending) return;
-  if (el("mode").value === "touchpad") { setCapture(true); status("Touchpad is active. Press Escape once to pause."); return; }
+  if (el("mode").value === "touchpad") { setCapture(true); status("Touchpad is active. Backspace goes back; Escape pauses."); return; }
   const request = ++captureRequest;
   lockPending = true;
   renderCapture();
@@ -169,6 +171,22 @@ for (const kind of ["keydown", "keyup"]) document.addEventListener(kind, event =
   if (!keyboardControl()) return;
   if (!supported.has(event.code)) return;
   event.preventDefault();
+  if (event.code === "Backspace") {
+    // Choose once per physical press so changing Shift while held cannot
+    // change the release key. Holding Back must not repeat Steam navigation.
+    if (kind === "keydown" && !event.repeat) backspaceKey = event.shiftKey ? "Backspace" : "Escape";
+    const code = backspaceKey;
+    if (kind === "keyup") backspaceKey = null;
+    if (code === "Escape") {
+      if (kind === "keydown" && !event.repeat) {
+        queue({type:"key", code:"Escape", value:1});
+        queue({type:"key", code:"Escape", value:0});
+      }
+    } else if (code === "Backspace") {
+      queue({type:"key", code, value:kind === "keyup" ? 0 : event.repeat ? 2 : 1});
+    }
+    return;
+  }
   queue({type:"key", code:event.code, value:kind === "keyup" ? 0 : event.repeat ? 2 : 1});
 });
 pad.addEventListener("blur", () => { if (active && !fullControl()) pauseControl(); });

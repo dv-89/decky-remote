@@ -1,4 +1,4 @@
-# Decky Remote 0.1.9
+# Decky Remote 0.1.10
 
 A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go S running SteamOS, with an action to open the system Dolphin file manager in Gaming Mode. Both devices connect to the same trusted private LAN. Look at the handheld's screen while controlling it; the remote page sends input without screen mirroring.
 
@@ -6,26 +6,26 @@ A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go 
 
 ## Install and connect
 
-[Download the installable ZIP](https://github.com/dv-89/decky-remote/releases/download/v0.1.9/decky-remote-0.1.9.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
+[Download the installable ZIP](https://github.com/dv-89/decky-remote/releases/download/v0.1.10/decky-remote-0.1.10.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
 
 ```text
-https://github.com/dv-89/decky-remote/releases/download/v0.1.9/decky-remote-0.1.9.zip
+https://github.com/dv-89/decky-remote/releases/download/v0.1.10/decky-remote-0.1.10.zip
 ```
 
 GitHub's **Download ZIP** button downloads source code, which is different from the installable plugin ZIP linked above.
 
 If you installed the earlier **Legion Remote** build, stop its remote input service and uninstall it through Decky before installing **Decky Remote**. The renamed package uses a different plugin folder; leaving the old copy enabled can occupy the same network port.
 
-To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.9 ZIP over the existing plugin, enable input again, reload the controller page and pair with the new code.
+To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.10 ZIP over the existing plugin, enable input again, reload the controller page and pair with the new code.
 
-1. Transfer `release/decky-remote-0.1.9.zip` to the handheld using a USB drive or your usual file-transfer tool.
+1. Transfer `release/decky-remote-0.1.10.zip` to the handheld using a USB drive or your usual file-transfer tool.
 2. In Decky's settings, enable Developer mode and select **Install Plugin from ZIP File**. Choose this ZIP. Menu wording may differ by Decky version. The ZIP's root folder is `decky-remote/`; it is a separate installation from Legion Library.
 3. Connect the laptop and handheld to the same trusted private Wi-Fi or LAN.
 4. Open **Decky → Decky Remote → Enable remote input** on the Legion.
 5. On your laptop or phone, open the address shown in Decky directly in your browser (for example, `http://192.168.1.42:8765`). No laptop download or installation is needed.
 6. Enter the eight-digit code shown in Decky, preserving any leading zeroes. One laptop can pair at a time.
 7. **Unlimited capture** is selected on laptops: Start control hides your laptop cursor so you can move, click, drag, scroll and type freely. On touch devices, **Touchpad** is selected automatically: drag inside the pad and use the grouped click/navigation buttons. **Send text** has its own tab.
-8. **Press Escape once** to release control and return your laptop cursor. To send Escape as Back to Steam, pause and use the on-screen **Back** button. Pause, changing tools/windows and losing mouse capture also release input.
+8. **Press Escape once** to release control and return your laptop cursor. **Backspace** sends Escape/Back to Steam while keeping capture active; holding it sends just one Back press. **Shift + Backspace** sends the Backspace key for deleting text. The on-screen **Back** and **Delete** buttons remain available. Backspace edits normally in the Send text tab. Pause, changing tools/windows and losing mouse capture also release input.
 9. Use **Stop remote input** in Decky when finished. **Disconnect laptop** revokes its session and creates a new pairing code while leaving the listener enabled.
 
 The laptop never needs your Steam password or a companion app. No input or pairing credentials are saved to disk. The plugin always starts disabled after a restart, reload or reinstall.
@@ -65,6 +65,12 @@ Pairing uses a random single-use eight-digit code and a random 256-bit session t
 
 The device controls when the service runs. Uninstall through Decky's plugin settings to remove it. No persistent input service, background laptop helper or system configuration needs to be undone. The Dolphin non-Steam shortcut can be removed separately through Steam.
 
+
+## Changes in 0.1.10
+
+- While remote control is active, physical Backspace sends Esc/Back to the handheld without releasing capture. Holding Backspace sends just one Back press.
+- Shift + Backspace forwards Backspace for text deletion, including held-key repeat. The mapping stays fixed until the key is released, even if Shift changes during the press.
+- Physical Escape still releases control immediately. Backspace stays local when paused or editing Send text; the on-screen Back and Delete buttons keep their existing behavior.
 
 ## Changes in 0.1.9
 
@@ -146,15 +152,15 @@ For a laptop-only browser demo, run `python scripts/preview.py` and open `http:/
 
 For a release from GitHub's website:
 
-1. Update the version in `package.json` and both root version fields in `package-lock.json` (or use `npm version 0.1.9 --no-git-tag-version`), and the versioned download links in this README. Commit and push the changes, along with any new code and release documentation.
+1. Update the version in `package.json` and both root version fields in `package-lock.json` (or use `npm version 0.1.10 --no-git-tag-version`), and the versioned download links in this README. Commit and push the changes, along with any new code and release documentation.
 2. Open **Actions → Build and release → Run workflow**, choose the branch, leave **Publish the package version as a GitHub release** checked, and run it. The workflow creates the matching version tag if needed and publishes the ZIP and `.sha256` after all checks pass. Uncheck Publish to test the build without releasing.
 3. Open the new release and copy the link to `decky-remote-<version>.zip` for Decky's URL installer. It uses `/releases/download/v<version>/decky-remote-<version>.zip`.
 
 Alternatively, after committing the new version, push a matching tag:
 
 ```powershell
-git tag v0.1.9
-git push origin v0.1.9
+git tag v0.1.10
+git push origin v0.1.10
 ```
 
 Tag pushes publish automatically. Regular pushes to `main` and pull requests only validate/build and save downloadable workflow artifacts. `0.x` versions and versions containing a prerelease suffix are marked **Pre-release**; stable `1.x` and later versions are published as regular releases. Titles and change notes are generated automatically.

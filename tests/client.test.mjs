@@ -33,9 +33,10 @@ function harness({pointerLock="promise", mode="mouse", coarse=false}={}) {
   const left=new Element("left"); left.dataset.click="left";
   const enter=new Element("enter"); enter.dataset.key="Enter";
   const back=new Element("back"); back.dataset.key="Escape";
+  const deleteKey=new Element("delete"); deleteKey.dataset.key="Backspace";
   doc=new Element("document");
   doc.getElementById=id=>elements[id];
-  doc.querySelectorAll=selector=>selector==="[data-click]" ? [left] : [enter,back];
+  doc.querySelectorAll=selector=>selector==="[data-click]" ? [left] : [enter,back,deleteKey];
   doc.exitPointerLock=()=>{doc.pointerLockElement=null;void doc.emit("pointerlockchange");}; doc.pointerLockElement=null; doc.hidden=false;
   const window=new Element("window");
   window.matchMedia=()=>({matches:coarse});
@@ -51,7 +52,7 @@ function harness({pointerLock="promise", mode="mouse", coarse=false}={}) {
   }});
   vm.runInContext(readFileSync(new URL("../web/client.js",import.meta.url),"utf8"),context);
   if(!coarse)elements.mode.value=mode;
-  return {elements,left,enter,back,doc,window,intervals,calls,lockCalls, reject:()=>{reject=true;},
+  return {elements,left,enter,back,deleteKey,doc,window,intervals,calls,lockCalls, reject:()=>{reject=true;},
     advance(ms){now+=ms;for(const [id,timer] of timers)if(timer.at<=now){timers.delete(id);timer.fn();}},
     get lockRequests(){return lockRequests;},
     async completeLock(){doc.pointerLockElement=elements.pad;await doc.emit("pointerlockchange");completeRequest?.();await new Promise(resolve=>setTimeout(resolve,0));},
@@ -116,6 +117,69 @@ test("one physical Escape pauses immediately; the Back button sends Escape to th
     assert.equal(h.doc.pointerLockElement,null);
     h.advance(3000);await h.flush();assert.equal(h.elements.capture.textContent,"Start control");
     await h.elements.capture.emit("click");assert.equal(h.elements.capture.textContent,"Pause control");
+  }
+});
+
+test("Backspace sends one Escape per press without unlocking; the Delete button still deletes",async()=>{
+  for(const mode of ["mouse","touchpad"]){
+    const h=harness({mode});await h.pair();await h.elements.capture.emit("click");
+    for(let i=0;i<2;i++){
+      await h.doc.emit("keydown",{code:"Backspace",repeat:false});
+      await h.doc.emit("keydown",{code:"Backspace",repeat:true});
+      await h.doc.emit("keyup",{code:"Backspace"});await h.flush();
+      assert.deepEqual(h.calls.at(-1).data.events,[{type:"key",code:"Escape",value:1},{type:"key",code:"Escape",value:0}]);
+      assert.equal(h.elements.capture.textContent,"Pause control");
+      assert.equal(h.doc.pointerLockElement,mode==="mouse"?h.elements.pad:null);
+    }
+    await h.deleteKey.emit("click");await h.flush();
+    assert.deepEqual(h.calls.at(-1).data.events,[{type:"key",code:"Backspace",value:1},{type:"key",code:"Backspace",value:0}]);
+  }
+});
+
+test("Shift+Backspace deletes with repeat and keeps its chosen mapping when Shift changes",async()=>{
+  for(const mode of ["mouse","touchpad"]){
+    const h=harness({mode});await h.pair();await h.elements.capture.emit("click");
+    await h.doc.emit("keydown",{code:"ShiftLeft",shiftKey:true});
+    await h.doc.emit("keydown",{code:"Backspace",shiftKey:true});
+    await h.doc.emit("keydown",{code:"Backspace",shiftKey:true,repeat:true});
+    await h.doc.emit("keyup",{code:"ShiftLeft",shiftKey:false});
+    await h.doc.emit("keydown",{code:"Backspace",shiftKey:false,repeat:true});
+    await h.doc.emit("keyup",{code:"Backspace",shiftKey:false});await h.flush();
+    assert.deepEqual(h.calls.at(-1).data.events,[
+      {type:"key",code:"ShiftLeft",value:1},{type:"key",code:"Backspace",value:1},
+      {type:"key",code:"Backspace",value:2},{type:"key",code:"ShiftLeft",value:0},
+      {type:"key",code:"Backspace",value:2},{type:"key",code:"Backspace",value:0},
+    ]);
+    await h.doc.emit("keydown",{code:"Backspace"});await h.flush();
+    await h.doc.emit("keydown",{code:"ShiftRight",shiftKey:true});
+    await h.doc.emit("keydown",{code:"Backspace",shiftKey:true,repeat:true});
+    await h.doc.emit("keyup",{code:"Backspace",shiftKey:true});
+    await h.doc.emit("keyup",{code:"ShiftRight",shiftKey:false});await h.flush();
+    assert.deepEqual(h.calls.at(-1).data.events,[{type:"key",code:"ShiftRight",value:1},{type:"key",code:"ShiftRight",value:0}]);
+    assert.equal(h.elements.capture.textContent,"Pause control");
+  }
+});
+
+test("Backspace stays local outside capture and pause clears its held mapping",async()=>{
+  for(const action of ["pause","blur","hidden","text"]){
+    const h=harness();await h.pair();
+    await h.doc.emit("keydown",{code:"Backspace"});await h.doc.emit("keyup",{code:"Backspace"});await h.flush();
+    assert.equal(h.calls.length,1);
+    await h.elements.capture.emit("click");
+    await h.doc.emit("keydown",{code:"Backspace",shiftKey:true});
+    if(action==="pause")await h.elements.capture.emit("click");
+    if(action==="blur")await h.window.emit("blur");
+    if(action==="hidden"){h.doc.hidden=true;await h.doc.emit("visibilitychange");h.doc.hidden=false;}
+    if(action==="text"){await h.elements.textTab.emit("click");h.elements.text.focus();}
+    await h.flush();assert.deepEqual(h.calls.at(-1).data.events,[{type:"release"}]);
+    let prevented=false;const count=h.calls.length;
+    await h.doc.emit("keydown",{code:"Backspace",preventDefault(){prevented=true;}});await h.flush();
+    assert.equal(prevented,false);assert.equal(h.calls.length,count);
+    if(action==="text")await h.elements.remoteTab.emit("click");
+    await h.elements.capture.emit("click");await h.doc.emit("keyup",{code:"Backspace"});await h.flush();
+    assert.equal(h.calls.length,count);
+    await h.doc.emit("keydown",{code:"Backspace"});await h.doc.emit("keyup",{code:"Backspace"});await h.flush();
+    assert.deepEqual(h.calls.at(-1).data.events,[{type:"key",code:"Escape",value:1},{type:"key",code:"Escape",value:0}]);
   }
 });
 
