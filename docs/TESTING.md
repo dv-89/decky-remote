@@ -12,6 +12,14 @@ For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and t
 
 For 0.1.2, TypeScript typecheck, Rollup build and the compiled-plugin check passed. All 16 Python backend/protocol/HTTP checks and 10 browser-client checks passed, including horizontal/diagonal scrolling, pixel/line/page units, fractional deltas, axis limits, pause resets, HTTP delivery and packed Linux horizontal-wheel events. Real horizontal scrolling on the handheld remains pending device validation.
 
+## Version 0.1.6
+
+The user confirmed that **Dolphin (Decky Remote)** appears in Steam's non-Steam library and that Steam's Play button opens the file manager. The plugin still reported a missing shortcut and appeared to add duplicates on repeated installs/opens. This narrows the failure to the plugin's shortcut discovery and metadata read-back; it does not establish acceptance of the updated Decky button.
+
+Version 0.1.6 uses collection map IDs, remembers the managed ID per Steam account before configuring it, and accepts known plugin entries when Steam omits executable metadata or sends no details callback. An explicitly reported foreign executable is left unchanged. Raw paths let Steam handle quoting, and the executable setter repairs legacy double-quoted targets before launch. Old duplicate entries are retained; reuse prevents another addition.
+
+The 20 Dolphin regression checks cover Steam's internal quoting, legacy targets, missing/delayed metadata, incomplete overviews, existing duplicates, reinstall/retry reuse, account changes, deletion/recreation, foreign shortcuts, overlapping presses, unavailable storage and older API fallback. TypeScript typecheck, Rollup, 23 Python checks and 34 Node checks (13 client, 20 Dolphin, 1 bundle) pass locally. Confirm the updated Decky button on the Legion, then repeat after reopening/reinstalling and verify the shortcut count stays unchanged.
+
 ## Version 0.1.5
 
 The user reported the 0.1.4 launch-settings error on the handheld. Version 0.1.5 switches to the shortcut-specific options setter, loads details before setting options, refreshes stale snapshots, and removes the exact working-directory read-back requirement. A missing native shortcut-options field is accepted after the native setter and executable verification; an explicitly mismatching native value still blocks launch. Native IDs are unsigned, and the name is set explicitly for reuse.
@@ -47,7 +55,7 @@ All 23 Python checks pass in Ubuntu WSL, including real file copies and symlink 
 - Reload/uninstall the plugin while paired. Verify the listener closes, input releases, and the next load starts disabled.
 - Leave Legion Library and other plugins installed; confirm their normal behavior still works.
 - With remote input off, choose **Open Dolphin** inside Decky. Verify the installed system Dolphin opens in Gaming Mode, remains visible/focused, and Steam shows Dolphin as a running app without switching to Desktop Mode.
-- Confirm **Dolphin (Decky Remote)** appears once in the current Steam account's non-Steam library. Close Dolphin, open it again through Decky and after a plugin/Steam restart, and verify no duplicate shortcut is added. Remove the shortcut through Steam and confirm the next button press recreates it.
+- Confirm **Dolphin (Decky Remote)** appears in the current Steam account's non-Steam library. Close Dolphin, open it again through Decky and after a plugin/Steam restart and reinstall, and verify no additional shortcut is added. Existing duplicates from older builds should remain unchanged until removed manually through Steam. Remove the managed shortcut through Steam and confirm the next button press recreates it once. Rename the managed entry and confirm reuse with the saved account binding.
 - Enable remote input and use the laptop mouse/keyboard in Dolphin. Check Home, Downloads, mounted storage, Ctrl+L for a path, Ctrl+C/Ctrl+V with a disposable file, and F3 for split view. Verify dialogs are visible and usable, copies have ordinary user ownership, and Dolphin exits normally with Ctrl+Q or Steam's Exit action. These are Dolphin's native operations, outside the plugin's former Home/storage boundary.
 - If using multiple Steam accounts, verify each account launches its own Dolphin shortcut. Check other plugins and existing non-Steam apps are unchanged.
 

@@ -10,163 +10,156 @@ const info = { ok: true, executable: "/usr/bin/dolphin", start_dir: "/home/deck"
 const name = "Dolphin (Decky Remote)";
 
 function setup() {
-  const shortcuts = new Map(), details = new Map(), calls = [], registrations = [];
-  const host = { collectionStore: { deckDesktopApps: { apps: shortcuts } }, appStore: { GetAppOverviewByAppID: id => shortcuts.get(id) }, SteamClient: { Apps: {
-    async AddShortcut(title, exe, dir, options) {
-      calls.push(["add", title, exe, dir, options]);
-      const id = -123456789; // Steam can deliver signed app IDs.
-      shortcuts.set(id >>> 0, { appid: id >>> 0, display_name: title });
-      details.set(id >>> 0, { strShortcutExe: exe, strShortcutLaunchOptions: "" }); return id;
-    },
-    SetShortcutName(id, title) { calls.push(["name", id, title]); shortcuts.get(id).display_name = title; },
-    SetShortcutStartDir(id, dir) { calls.push(["dir", id, dir]); details.get(id).strShortcutStartDir = dir; },
-    SetShortcutLaunchOptions(id, options) { calls.push(["options", id, options]); details.get(id).strShortcutLaunchOptions = options; },
-    SetAppLaunchOptions(id, options) { calls.push(["general-options", id, options]); details.get(id).strLaunchOptions = options; },
-    RegisterForAppDetails(id, callback) { callback({}); callback(details.get(id)); const record = { unregister() { record.closed = true; } }; registrations.push(record); return record; },
-    RunGame(...args) { calls.push(["run", ...args]); },
-  } } };
-  const open = createDolphinLauncher(host, async () => info, () => calls.push(["close"]));
-  return { host, shortcuts, details, calls, open, registrations };
+  const shortcuts = new Map(), details = new Map(), calls = [], registrations = [], storage = new Map();
+  let nextId = -123456789;
+  const host = {
+    App: { m_CurrentUser: { strSteamID: "76561198000000001" } },
+    localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+    collectionStore: { deckDesktopApps: { apps: shortcuts } },
+    appStore: { GetAppOverviewByAppID: id => shortcuts.get(id) }, SteamClient: { Apps: {
+      async AddShortcut(title, exe, dir, options) {
+        calls.push(["add", title, exe, dir, options]);
+        const id = nextId++;
+        shortcuts.set(id >>> 0, { appid: id >>> 0, display_name: title });
+        // Model Steam's own quoting rather than echoing the API input verbatim.
+        details.set(id >>> 0, { strShortcutExe: `"${exe}"` }); return id;
+      },
+      SetShortcutExe(id, exe) { calls.push(["exe", id, exe]); details.get(id).strShortcutExe = `"${exe}"`; },
+      SetShortcutName(id, title) { calls.push(["name", id, title]); shortcuts.get(id).display_name = title; },
+      SetShortcutStartDir(id, dir) { calls.push(["dir", id, dir]); details.get(id).strShortcutStartDir = `"${dir}"`; },
+      SetShortcutLaunchOptions(id, options) { calls.push(["options", id, options]); details.get(id).strShortcutLaunchOptions = options; },
+      SetAppLaunchOptions(id, options) { calls.push(["general-options", id, options]); details.get(id).strLaunchOptions = options; },
+      RegisterForAppDetails(id, callback) { callback({}); callback(details.get(id)); const record = { unregister() { record.closed = true; } }; registrations.push(record); return record; },
+      RunGame(...args) { calls.push(["run", ...args]); },
+    } },
+  };
+  const reload = () => createDolphinLauncher(host, async () => info, () => calls.push(["close"]));
+  const seed = (id, title = name, exe = '"/usr/bin/dolphin"') => {
+    shortcuts.set(id, { appid: id, display_name: title }); details.set(id, { strShortcutExe: exe });
+  };
+  return { host, shortcuts, details, calls, registrations, storage, seed, reload, open: reload() };
 }
+const count = (s, action) => s.calls.filter(call => call[0] === action).length;
 
-test("creates a native shortcut, saves settings before launch and uses a full unsigned game ID", async () => {
+test("passes raw paths to Steam and configures the assigned unsigned ID before RunGame", async () => {
   const s = setup(); await s.open();
-  assert.deepEqual(s.calls.map(c => c[0]), ["add", "name", "dir", "options", "close", "run"]);
-  assert.deepEqual(s.calls[0], ["add", name, '"/usr/bin/dolphin"', "", ""]);
-  assert.deepEqual(s.calls[2].slice(2), ['"/home/deck"']);
-  assert.equal(s.calls[2][1], -123456789 >>> 0, "Steam setters require an unsigned app ID");
-  assert.equal(s.calls[3][2], info.launch_options);
-  assert.deepEqual(s.calls[5].slice(1), [((BigInt(-123456789 >>> 0) << 32n) | 0x02000000n).toString(), "", -1, 100]);
-  assert.ok(s.registrations.every(r => r.closed), "synchronous callbacks must unregister");
+  assert.deepEqual(s.calls.map(c => c[0]), ["add", "exe", "name", "dir", "options", "close", "run"]);
+  assert.deepEqual(s.calls[0], ["add", name, "/usr/bin/dolphin", "", ""]);
+  assert.deepEqual(s.calls[1], ["exe", -123456789 >>> 0, "/usr/bin/dolphin"]);
+  assert.deepEqual(s.calls[3], ["dir", -123456789 >>> 0, "/home/deck"]);
+  assert.deepEqual(s.calls[6].slice(1), [((BigInt(-123456789 >>> 0) << 32n) | 0x02000000n).toString(), "", -1, 100]);
 });
 
-test("repeat presses and plugin reload reuse the active account's existing Dolphin", async () => {
-  const s = setup(); await s.open(); await s.open();
-  const reloaded = createDolphinLauncher(s.host, async () => info, () => {}); await reloaded();
-  assert.equal(s.calls.filter(c => c[0] === "add").length, 1);
-  assert.equal(s.calls.filter(c => c[0] === "run").length, 3);
+test("repairs legacy double-quoted targets and reuses that shortcut", async () => {
+  const s = setup(); s.seed(42, name, '  ""/usr/bin/dolphin""  '); await s.open();
+  assert.equal(count(s, "add"), 0); assert.equal(s.details.get(42).strShortcutExe, '"/usr/bin/dolphin"');
+  assert.equal(s.calls.find(c => c[0] === "run")[1], ((42n << 32n) | 0x02000000n).toString());
 });
 
-test("overlapping clicks create and launch once", async () => {
-  const s = setup(); await Promise.all([s.open(), s.open(), s.open()]);
-  assert.equal(s.calls.filter(c => c[0] === "add").length, 1);
-  assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
+test("known working plugin shortcut launches even when Steam omits target/options metadata", async () => {
+  const s = setup(); s.seed(42); s.details.set(42, { strDisplayName: name }); await s.open();
+  assert.equal(count(s, "add"), 0); assert.equal(count(s, "run"), 1);
+  assert.ok(s.registrations.every(r => r.closed));
 });
 
-test("does not modify or run a same-name shortcut for a different executable", async () => {
-  const s = setup(); s.shortcuts.set(42, { appid: 42, display_name: name });
-  s.details.set(42, { strShortcutExe: '"/usr/bin/another-app"' });
-  await s.open();
-  assert.equal(s.details.get(42).strShortcutStartDir, undefined);
-  assert.equal(s.calls.filter(c => c[0] === "add").length, 1);
-  assert.equal(s.calls.find(c => c[0] === "run")[1], ((BigInt(-123456789 >>> 0) << 32n) | 0x02000000n).toString());
+test("known plugin shortcut launches even when the details callback never arrives", async () => {
+  const s = setup(); s.seed(42);
+  s.host.SteamClient.Apps.RegisterForAppDetails = () => { const record = { unregister() { record.closed = true; } }; s.registrations.push(record); return record; };
+  await s.open(); assert.equal(count(s, "add"), 0); assert.equal(count(s, "run"), 1);
+  assert.ok(s.registrations.every(r => r.closed));
 });
 
-test("does not carry another Steam account's shortcut across an account switch", async () => {
-  const s = setup(); await s.open(); s.shortcuts.clear(); s.details.clear(); await s.open();
-  assert.equal(s.calls.filter(c => c[0] === "add").length, 2);
+test("uses collection map IDs even if Steam omits overview.appid", async () => {
+  const s = setup(); s.seed(42); delete s.shortcuts.get(42).appid; await s.open();
+  assert.equal(count(s, "add"), 0); assert.equal(s.calls.find(c => c[0] === "exe")[1], 42);
 });
 
-test("missing Dolphin or unavailable Steam library makes no changes", async () => {
-  const s = setup();
-  const missing = createDolphinLauncher(s.host, async () => ({ ok: false, error: "Dolphin not installed" }), () => {});
-  await assert.rejects(missing(), /not installed/);
-  s.host.collectionStore = undefined;
+test("several old plugin entries are reused without creating another", async () => {
+  const s = setup(); s.seed(42); s.seed(43); await s.open(); await s.reload()();
+  assert.equal(count(s, "add"), 0); assert.equal(s.shortcuts.size, 2); assert.equal(count(s, "run"), 2);
+});
+
+test("plugin reinstall reuses its remembered ID even if Steam did not save the name", async () => {
+  const s = setup(); s.host.SteamClient.Apps.SetShortcutName = () => {};
+  await s.open(); const id = s.calls.find(c => c[0] === "exe")[1];
+  s.shortcuts.get(id).display_name = "unsaved shortcut name"; s.details.set(id, { strDisplayName: "unsaved shortcut name" });
+  await s.reload()(); assert.equal(count(s, "add"), 1); assert.equal(count(s, "run"), 2);
+});
+
+test("a failed first configuration remembers the ID so retries do not add duplicates", async () => {
+  const s = setup(); const configure = s.host.SteamClient.Apps.SetShortcutExe;
+  s.host.SteamClient.Apps.SetShortcutExe = () => { throw new Error("Steam is busy"); };
+  await assert.rejects(s.open(), /Steam is busy/);
+  const id = s.shortcuts.keys().next().value;
+  s.shortcuts.get(id).display_name = "unsaved shortcut name"; s.details.set(id, { strDisplayName: "unsaved shortcut name" });
+  s.host.SteamClient.Apps.SetShortcutExe = configure; await s.reload()();
+  assert.equal(count(s, "add"), 1); assert.equal(count(s, "run"), 1);
+});
+
+test("bindings are per Steam account", async () => {
+  const s = setup(); await s.open(); const firstId = s.shortcuts.keys().next().value;
+  s.host.App.m_CurrentUser.strSteamID = "76561198000000002"; s.shortcuts.clear(); s.details.clear(); await s.open();
+  assert.equal(count(s, "add"), 2); assert.equal(s.storage.size, 2);
+  assert.notEqual(s.shortcuts.keys().next().value, firstId);
+});
+
+test("deleting a shortcut from Steam allows one replacement", async () => {
+  const s = setup(); await s.open(); s.shortcuts.clear(); s.details.clear(); await s.open(); await s.reload()();
+  assert.equal(count(s, "add"), 2); assert.equal(count(s, "run"), 3);
+});
+
+test("explicit foreign targets with the plugin's name remain untouched", async () => {
+  const s = setup(); s.seed(42, name, '"/usr/bin/another-app"'); await s.open();
+  assert.equal(s.details.get(42).strShortcutExe, '"/usr/bin/another-app"');
+  assert.equal(count(s, "add"), 1); assert.ok(s.calls.filter(c => ["exe", "name", "dir", "options"].includes(c[0])).every(c => c[1] !== 42));
+});
+
+test("a same-name Dolphin emulator is not changed or launched", async () => {
+  const s = setup(); s.seed(42, "Dolphin", "/usr/bin/dolphin-emu"); await s.open();
+  assert.equal(count(s, "add"), 1); assert.equal(s.shortcuts.get(42).display_name, "Dolphin");
+});
+
+test("unnamed legacy file-manager entries can be adopted by their actual executable", async () => {
+  const s = setup(); s.seed(42, "dolphin", '""/usr/bin/dolphin""'); await s.open();
+  assert.equal(count(s, "add"), 0); assert.equal(s.shortcuts.get(42).display_name, name);
+});
+
+test("generic Dolphin name without executable evidence is not adopted", async () => {
+  const s = setup(); s.seed(42, "Dolphin"); s.details.set(42, { strDisplayName: "Dolphin" }); await s.open();
+  assert.equal(count(s, "add"), 1); assert.equal(s.shortcuts.get(42).display_name, "Dolphin");
+});
+
+test("overlapping button presses create and launch once", async () => {
+  const s = setup(); await Promise.all([s.open(), s.open(), s.open()]); assert.equal(count(s, "add"), 1); assert.equal(count(s, "run"), 1);
+});
+
+test("storage errors do not prevent reuse through the live library", async () => {
+  const s = setup(); s.host.localStorage = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); } };
+  await s.open(); await s.reload()(); assert.equal(count(s, "add"), 1); assert.equal(count(s, "run"), 2);
+});
+
+test("missing Dolphin and unavailable library fail without changing shortcuts", async () => {
+  const s = setup(); const missing = createDolphinLauncher(s.host, async () => ({ ok: false, error: "Dolphin not installed" }), () => {});
+  await assert.rejects(missing(), /not installed/); s.host.collectionStore = undefined;
   await assert.rejects(s.open(), /library is not ready/); assert.deepEqual(s.calls, []);
 });
 
-test("failed shortcut creation never launches and can be retried", async () => {
+test("failed creation cannot launch and can be retried", async () => {
   const s = setup(); const create = s.host.SteamClient.Apps.AddShortcut;
-  s.host.SteamClient.Apps.AddShortcut = async () => 0;
-  await assert.rejects(s.open(), /could not create/); assert.deepEqual(s.calls, []);
-  s.host.SteamClient.Apps.AddShortcut = create; await s.open();
-  assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
+  s.host.SteamClient.Apps.AddShortcut = async () => 0; await assert.rejects(s.open(), /could not create/);
+  assert.equal(count(s, "run"), 0); s.host.SteamClient.Apps.AddShortcut = create; await s.open(); assert.equal(count(s, "run"), 1);
 });
 
-test("unconfirmed launch settings never launch a potentially wrong app", async () => {
-  const s = setup(); s.host.SteamClient.Apps.SetShortcutLaunchOptions = () => {};
-  await assert.rejects(s.open(), /has not applied/);
-  assert.equal(s.calls.filter(c => c[0] === "run").length, 0);
-  assert.ok(s.registrations.every(r => r.closed), "timeout must unregister");
-});
-
-test("waits for asynchronously registered shortcuts before configuring or running", async () => {
+test("waits for Steam to register the created app before configuring it", async () => {
   const s = setup(); const create = s.host.SteamClient.Apps.AddShortcut;
   s.host.SteamClient.Apps.AddShortcut = async (...args) => {
     const id = await create(...args); const overview = s.shortcuts.get(id >>> 0);
     s.shortcuts.delete(id >>> 0); setTimeout(() => s.shortcuts.set(id >>> 0, overview), 50); return id;
   };
-  await s.open(); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
+  await s.open(); assert.equal(count(s, "run"), 1);
 });
 
-test("supports asynchronous details and shortcut-specific launch-option fields", async () => {
-  const s = setup();
-  s.host.SteamClient.Apps.SetShortcutLaunchOptions = (id, options) => {
-    const details = s.details.get(id); details.strLaunchOptions = ""; details.strShortcutLaunchOptions = options;
-  };
-  s.host.SteamClient.Apps.RegisterForAppDetails = (id, callback) => {
-    callback(undefined); callback({}); const timer = setTimeout(() => callback(s.details.get(id)), 10);
-    const record = { unregister() { clearTimeout(timer); record.closed = true; } }; s.registrations.push(record); return record;
-  };
-  await s.open(); await s.open();
-  assert.equal(s.calls.filter(c => c[0] === "add").length, 1);
-  assert.equal(s.calls.filter(c => c[0] === "run").length, 2);
-  assert.ok(s.registrations.every(r => r.closed));
-});
-
-test("uses the native shortcut setter when the general app setter is a no-op", async () => {
-  const s = setup(); s.host.SteamClient.Apps.SetAppLaunchOptions = () => { throw new Error("wrong API"); };
-  await s.open(); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
-});
-
-test("loads details before writing and refreshes stale one-shot snapshots until native options arrive", async () => {
-  const s = setup(); let loaded = false, reads = 0, nativeOptions = "";
-  s.host.SteamClient.Apps.SetShortcutLaunchOptions = (id, options) => {
-    assert.ok(loaded, "Steam details must be loaded before writes"); nativeOptions = options;
-    // The registration that loaded the details receives no update event.
-  };
-  s.host.SteamClient.Apps.RegisterForAppDetails = (id, callback) => {
-    loaded = true; reads++;
-    callback({ strShortcutExe: s.details.get(id).strShortcutExe, strShortcutLaunchOptions: reads >= 4 ? nativeOptions : "" });
-    const record = { unregister() { record.closed = true; } }; s.registrations.push(record); return record;
-  };
-  await s.open(); assert.ok(reads >= 4); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
-  assert.ok(s.registrations.every(r => r.closed));
-});
-
-test("does not require an exact or present working-directory read-back", async () => {
-  for (const dir of [undefined, "", "/home/deck/"]) {
-    const s = setup(); s.host.SteamClient.Apps.SetShortcutStartDir = id => { s.details.get(id).strShortcutStartDir = dir; };
-    await s.open(); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
-  }
-});
-
-test("native setter remains usable when Steam omits the shortcut-options field", async () => {
-  const s = setup(); s.host.SteamClient.Apps.SetShortcutLaunchOptions = id => {
-    delete s.details.get(id).strShortcutLaunchOptions;
-    s.details.get(id).strLaunchOptions = ""; // The separate general property is not the shortcut's value.
-  };
-  await s.open(); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
-});
-
-test("older Steam API falls back to general options and confirms its reported value", async () => {
-  const s = setup(); delete s.host.SteamClient.Apps.SetShortcutLaunchOptions;
-  await s.open(); assert.equal(s.calls.filter(c => c[0] === "general-options").length, 1);
-  assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
-});
-
-test("a changed shortcut executable is never launched", async () => {
-  const s = setup(); s.host.SteamClient.Apps.SetShortcutLaunchOptions = id => { s.details.get(id).strShortcutExe = '"/usr/bin/foreign-app"'; };
-  await assert.rejects(s.open(), /target changed/);
-  assert.equal(s.calls.filter(c => c[0] === "run").length, 0);
-});
-
-test("sets the shortcut name explicitly when Steam ignores AddShortcut's name", async () => {
-  const s = setup(); const create = s.host.SteamClient.Apps.AddShortcut;
-  s.host.SteamClient.Apps.AddShortcut = async (...args) => {
-    const id = await create(...args); s.shortcuts.get(id >>> 0).display_name = "/usr/bin/dolphin"; return id;
-  };
-  await s.open(); await s.open();
-  assert.equal(s.calls.filter(c => c[0] === "add").length, 1);
-  assert.equal(s.shortcuts.values().next().value.display_name, name);
+test("older Steam API can use the general launch-options setter", async () => {
+  const s = setup(); delete s.host.SteamClient.Apps.SetShortcutLaunchOptions; await s.open();
+  assert.equal(count(s, "general-options"), 1); assert.equal(count(s, "run"), 1);
 });

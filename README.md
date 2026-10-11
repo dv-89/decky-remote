@@ -1,4 +1,4 @@
-# Decky Remote 0.1.5
+# Decky Remote 0.1.6
 
 A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go S running SteamOS, with an action to open the system Dolphin file manager in Gaming Mode. Both devices connect to the same trusted private LAN. Look at the handheld's screen while controlling it; the remote page sends input without screen mirroring.
 
@@ -6,19 +6,19 @@ A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go 
 
 ## Install and connect
 
-[Download the installable ZIP](https://github.com/dv-89/decky-remote/raw/refs/heads/main/release/decky-remote-0.1.5.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
+[Download the installable ZIP](https://github.com/dv-89/decky-remote/releases/download/v0.1.6/decky-remote-0.1.6.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
 
 ```text
-https://raw.githubusercontent.com/dv-89/decky-remote/main/release/decky-remote-0.1.5.zip
+https://github.com/dv-89/decky-remote/releases/download/v0.1.6/decky-remote-0.1.6.zip
 ```
 
 GitHub's **Download ZIP** button downloads source code, which is different from the installable plugin ZIP linked above.
 
 If you installed the earlier **Legion Remote** build, stop its remote input service and uninstall it through Decky before installing **Decky Remote**. The renamed package uses a different plugin folder; leaving the old copy enabled can occupy the same network port.
 
-To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.5 ZIP over the existing plugin, enable input again, reload the laptop/mobile controller page and pair with the new code.
+To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.6 ZIP over the existing plugin, enable input again, reload the laptop/mobile controller page and pair with the new code.
 
-1. Transfer `release/decky-remote-0.1.5.zip` to the handheld using a USB drive or your usual file-transfer tool.
+1. Transfer `release/decky-remote-0.1.6.zip` to the handheld using a USB drive or your usual file-transfer tool.
 2. In Decky's settings, enable Developer mode and select **Install Plugin from ZIP File**. Choose this ZIP. Menu wording may differ by Decky version. The ZIP's root folder is `decky-remote/`; it is a separate installation from Legion Library.
 3. Connect the laptop and handheld to the same trusted private Wi-Fi or LAN.
 4. Open **Decky → Decky Remote → Enable remote input** on the Legion.
@@ -37,7 +37,8 @@ Open **Decky → Decky Remote → Open Dolphin**. This launches the installed KD
 - Browse paths, copy files/folders, rename, move and manage files using Dolphin's own interface. Use the Legion touchscreen or paired laptop keyboard/mouse. Dolphin runs as the signed-in SteamOS user, with that user's ordinary filesystem permissions.
 - In Dolphin, **Ctrl+L** focuses the editable location/path, **Ctrl+C / Ctrl+V** copy and paste files, **Ctrl+X / Ctrl+V** move files, **F3** toggles split view, and **Ctrl+Q** quits. Steam's menu also offers the usual return/exit controls for a running app.
 - Steam launches a new Dolphin window through XWayland so Gamescope can associate it with the running shortcut. The plugin does not switch sessions, launch a full desktop, or install another file manager. `/usr/bin/dolphin` must already be installed; otherwise the panel displays an error.
-- The shortcut remains useful after plugin uninstall. Remove **Dolphin (Decky Remote)** from Steam's non-Steam library if you no longer want it. A shortcut you rename will no longer be found by the plugin, which may add another on the next launch.
+- The plugin remembers the shortcut ID in Steam's browser storage, separately for each Steam account, and also searches the current library for its existing entry. Retries, reloads and reinstalls reuse that entry; a renamed entry can be reused while its saved binding remains available. This storage contains only the shortcut ID, with no input or pairing credentials.
+- The shortcut remains useful after plugin uninstall. Remove **Dolphin (Decky Remote)** from Steam's non-Steam library if you no longer want it. If an earlier version already created extra entries, confirm the updated button works before removing the extras through Steam. The plugin reuses an existing entry without automatically deleting old duplicates.
 - Dolphin's window, dialogs, clipboard and Steam focus still need testing on the Legion. Launching an app through Steam does not give Dolphin native gamepad navigation; use touchscreen or remote mouse input, or set a mouse/keyboard controller layout in Steam.
 
 The previous custom Files page and its file-copy RPCs have been removed. The LAN controller has no file-management or app-launch endpoint.
@@ -63,6 +64,12 @@ The laptop page and input API are served over **unencrypted HTTP** on the handhe
 Pairing uses a random single-use eight-digit code and a random 256-bit session token kept in browser memory. Tokens are also bound to the laptop's source IP. Pairing is limited to five attempts per minute across all clients. Exact Host/Origin checks, JSON-only POST requests, blocked cross-site requests and a restrictive content security policy reduce browser-based misuse. The API accepts only validated, size-limited input events and text; it has no file access or command execution endpoint. Dolphin launch metadata is available through local Decky RPC; the LAN API cannot start apps or browse files. HTTP requests have a five-second deadline and connections are capped at sixteen.
 
 The device controls when the service runs. Uninstall through Decky's plugin settings to remove it. No persistent input service, background laptop helper or system configuration needs to be undone. The Dolphin non-Steam shortcut can be removed separately through Steam.
+
+## Changes in 0.1.6
+
+- Fix **Steam could not load Dolphin's shortcut** when Steam omits details for an otherwise working shortcut. Configure and launch the managed entry without requiring a metadata read-back.
+- Reuse existing plugin shortcuts using the library's actual map IDs and a saved binding per Steam account. Save the ID before configuration so failed attempts and reinstalls do not keep adding shortcuts.
+- Pass raw executable and working-directory paths to Steam, which handles quoting internally. Repair legacy double-quoted Dolphin targets when reusing an entry.
 
 ## Changes in 0.1.5
 
@@ -118,15 +125,15 @@ For a laptop-only browser demo, run `python scripts/preview.py` and open `http:/
 
 For a release from GitHub's website:
 
-1. Update the version in `package.json` and both root version fields in `package-lock.json` (or use `npm version 0.1.5 --no-git-tag-version`). Commit and push the changes, along with any new code and release documentation.
+1. Update the version in `package.json` and both root version fields in `package-lock.json` (or use `npm version 0.1.6 --no-git-tag-version`). Commit and push the changes, along with any new code and release documentation.
 2. Open **Actions → Build and release → Run workflow**, choose the branch, leave **Publish the package version as a GitHub release** checked, and run it. The workflow creates the matching version tag if needed and publishes the ZIP and `.sha256` after all checks pass. Uncheck Publish to test the build without releasing.
 3. Open the new release and copy the link to `decky-remote-<version>.zip` for Decky's URL installer. It uses `/releases/download/v<version>/decky-remote-<version>.zip`.
 
 Alternatively, after committing the new version, push a matching tag:
 
 ```powershell
-git tag v0.1.5
-git push origin v0.1.5
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 Tag pushes publish automatically. Regular pushes to `main` and pull requests only validate/build and save downloadable workflow artifacts. `0.x` versions and versions containing a prerelease suffix are marked **Pre-release**; stable `1.x` and later versions are published as regular releases. Titles and change notes are generated automatically.
