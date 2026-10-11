@@ -17,16 +17,15 @@
       <nav class="tabs" role="tablist" aria-label="Remote tools"><button id="remoteTab" role="tab" aria-selected="true" aria-controls="remotePane">Control</button><button id="textTab" role="tab" aria-selected="false" aria-controls="textPane">Send text</button></nav>
       <section id="remotePane" role="tabpanel" aria-labelledby="remoteTab" class="card">
         <div class="control-heading"><h2>Keyboard & mouse</h2><button id="capture">Start control</button></div>
-        <label for="mode">Control mode</label><select id="mode"><option value="mouse">Unlimited capture — hold Esc to release</option><option value="touchpad">Touchpad — drag to move</option></select>
-        <p id="captureHint" class="small">Tap Escape to send it to the handheld. Hold Escape for about two seconds to release control.</p>
-        <p id="helperHint" class="small" hidden>For Unlimited capture, open the controller through the laptop helper in Chrome or Edge. <a href="https://github.com/dv-89/decky-remote/releases/download/v0.1.8/decky-remote-laptop-0.1.8-windows.zip" target="_blank" rel="noopener noreferrer">Download Windows helper</a>. Extract it, run DeckyRemoteHelper.exe, and enter the address shown in Decky. Touchpad works here without the helper.</p>
-        <div id="pad" tabindex="0" role="application" aria-label="Remote keyboard and mouse. Tap Escape to send; hold Escape to release."><span id="padTitle">Ready to control</span><small id="padHint">Press Start control to begin</small></div>
+        <label for="mode">Control mode</label><select id="mode"><option value="mouse">Unlimited capture — Esc to release</option><option value="touchpad">Touchpad — drag to move</option></select>
+        <p id="captureHint" class="small">Press Escape once to release control. Use the Back button below to send Escape to Steam.</p>
+        <div id="pad" tabindex="0" role="application" aria-label="Remote keyboard and mouse. Press Escape once to release control."><span id="padTitle">Ready to control</span><small id="padHint">Press Start control to begin</small></div>
         <div class="mouse-buttons"><button data-click="left">Left click</button><button data-click="middle">Middle</button><button data-click="right">Right click</button></div>
         <div class="navigation-controls">
           <div class="primary-keys"><button data-key="Escape">Back / Esc</button><button data-key="Enter">Enter</button><button data-key="Backspace">⌫ Delete</button></div>
           <div class="direction-pad" aria-label="Arrow keys"><button data-key="ArrowUp" class="up" aria-label="Arrow up">↑</button><button data-key="ArrowLeft" class="left" aria-label="Arrow left">←</button><button data-key="ArrowDown" class="down" aria-label="Arrow down">↓</button><button data-key="ArrowRight" class="right" aria-label="Arrow right">→</button></div>
         </div>
-        <details><summary>More keys & help</summary><div class="extra-keys"><button data-key="Tab">Tab</button><button id="showDesktop">Super + D</button></div><p class="small">Unlimited capture enters fullscreen and hides your laptop cursor. Tap Escape to send it to the handheld; hold Escape for about two seconds to release control. Touchpad works by dragging. The Back button sends Escape without pausing. Switching windows releases control. Windows and browser shortcuts may stay local.</p></details>
+        <details><summary>More keys & help</summary><div class="extra-keys"><button data-key="Tab">Tab</button><button id="showDesktop">Super + D</button></div><p class="small">Unlimited capture hides your laptop cursor. Press Escape once to release control. Touchpad works by dragging. The Back button sends Escape to the handheld. Switching windows releases control. Windows and browser shortcuts may stay local.</p></details>
       </section>
       <section id="textPane" role="tabpanel" aria-labelledby="textTab" class="card" hidden>
         <h2>Send text</h2><label for="text">Select a text field on the handheld first</label><textarea id="text" rows="5" maxlength="128" placeholder="Type here, then send to the handheld…"></textarea>

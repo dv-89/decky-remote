@@ -4,7 +4,6 @@ const pad = el("pad");
 let token = "", active = false, events = [], flushing = false, pairing = false;
 let serial = Promise.resolve(), drag = null, wheel = 0, wheelX = 0;
 let lockPending = false, lockTimer = null, captureRequest = 0;
-let keyboardLocked = false, setupReady = false, escapeTimer = null;
 el("mode").value = window.matchMedia?.("(pointer: coarse)").matches ? "touchpad" : "mouse";
 const supported = new Set([
   ...Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ", letter => "Key" + letter),
@@ -22,18 +21,13 @@ const supported = new Set([
 function status(message, error = false) { el("status").textContent = message; el("status").classList.toggle("error", error); }
 function fullControl() { return active && document.pointerLockElement === pad; }
 function keyboardControl() { return fullControl() || (active && document.activeElement === pad); }
-function canLockKeyboard() {
-  return window.isSecureContext && typeof navigator.keyboard?.lock === "function"
-    && typeof document.documentElement.requestFullscreen === "function";
-}
 function renderCapture() {
   pad.classList.toggle("active", active);
   el("capture").textContent = lockPending ? "Cancel control" : active ? "Pause control" : "Start control";
   el("mode").disabled = active || lockPending;
-  el("helperHint").hidden = el("mode").value !== "mouse" || canLockKeyboard();
-  el("captureHint").textContent = lockPending ? "Starting fullscreen control. Escape or Cancel control stops the request." : el("mode").value === "mouse" ? "Move and click freely. Tap Escape to send it to the handheld; hold Escape for about two seconds to release control." : "Drag the pad to move. Tap Escape to send it to the handheld; hold Escape for about two seconds to pause.";
+  el("captureHint").textContent = lockPending ? "Waiting for mouse capture. Escape or Cancel control stops the request." : el("mode").value === "mouse" ? "Move and click freely. Press Escape once to release control. Use the Back button below to send Escape to Steam." : "Drag the pad to move. Press Escape once to pause. Use the Back button below to send Escape to Steam.";
   el("padTitle").textContent = active ? "You’re controlling the handheld" : "Ready to control";
-  el("padHint").textContent = active ? "Tap Esc: send · Hold Esc: release" : "Press Start control to begin";
+  el("padHint").textContent = active ? "Move · Click · Drag · Scroll · Type · Esc to pause" : "Press Start control to begin";
 }
 function setCapture(value) {
   active = value && !!token;
@@ -45,58 +39,42 @@ function setCapture(value) {
     captureRequest++;
     drag = null;
     wheel = wheelX = 0;
-    clearTimeout(escapeTimer); escapeTimer = null;
-    keyboardLocked = setupReady = false;
     events = token ? [{type:"release"}] : [];
     if (document.pointerLockElement === pad) document.exitPointerLock();
-    if (document.fullscreenElement === document.documentElement) void document.exitFullscreen().catch(() => {});
-    try { navigator.keyboard?.unlock(); } catch {}
   }
   renderCapture();
 }
-function lockFailed(message = "Could not start fullscreen keyboard and mouse capture. Try again in Chrome or Edge, or choose Touchpad mode.") {
+function lockFailed() {
   if (!lockPending) return;
   setCapture(false);
-  status(message, true);
+  status("The browser could not capture your mouse. Choose Touchpad mode, or try Start control again.", true);
 }
 function pauseControl() {
   setCapture(false);
   status("Control paused. Start control to resume.");
 }
 function captureReady() {
-  if (!lockPending || !setupReady || !keyboardLocked || document.fullscreenElement !== document.documentElement || document.pointerLockElement !== pad) return;
+  if (!lockPending || !token || document.hidden || document.pointerLockElement !== pad) return;
   setCapture(true);
-  status("Control is active. Tap Escape to send it; hold Escape for about two seconds to release.");
+  status("Control is active. Press Escape once to release control.");
 }
 async function startControl() {
   if (!token || active || lockPending) return;
-  if (el("mode").value === "touchpad") { setCapture(true); status("Touchpad is active. Tap Escape to send it; hold Escape to pause."); return; }
-  if (!canLockKeyboard()) {
-    status("Unlimited capture needs the laptop helper in Chrome or Edge. Open the helper, enter your handheld's address, and pair on the page it opens. Touchpad works without it.", true);
-    renderCapture(); return;
-  }
+  if (el("mode").value === "touchpad") { setCapture(true); status("Touchpad is active. Press Escape once to pause."); return; }
   const request = ++captureRequest;
   lockPending = true;
   renderCapture();
-  lockTimer = setTimeout(() => lockFailed(), 10000);
+  lockTimer = setTimeout(lockFailed, 10000);
   try {
-    // Request all locks within the click gesture. Pointer lock must precede
-    // fullscreen, which consumes transient activation. Keyboard lock becomes
-    // effective once script-initiated fullscreen is active.
-    const keyboard = navigator.keyboard.lock(["Escape"]);
-    const requests = [Promise.resolve(keyboard)];
-    try {
-      requests.push(Promise.resolve(pad.requestPointerLock()));
-      requests.push(document.fullscreenElement === document.documentElement ? Promise.resolve() : document.documentElement.requestFullscreen());
-    } catch (error) { requests.push(Promise.reject(error)); }
-    await Promise.all(requests);
+    // Request directly within the click gesture. Legacy browsers return
+    // undefined and report the result through pointerlockchange instead.
+    await pad.requestPointerLock();
     if (request !== captureRequest || !token || document.hidden) {
       // A late completion must not revive a cancelled request. Avoid undoing
       // a newer request's locks if the user has already started again.
       if (!active && !lockPending) setCapture(false);
       return;
     }
-    keyboardLocked = setupReady = true;
     captureReady();
   } catch {
     if (request === captureRequest) lockFailed();
@@ -182,18 +160,9 @@ el("capture").addEventListener("click", () => {
 el("mode").addEventListener("change", pauseControl);
 pad.addEventListener("click", () => { if (!active && !lockPending) void startControl(); });
 for (const kind of ["keydown", "keyup"]) document.addEventListener(kind, event => {
-  if (event.code === "Escape" && lockPending) { event.preventDefault(); pauseControl(); return; }
-  if (event.code === "Escape" && keyboardControl()) {
+  if (event.code === "Escape" && (lockPending || keyboardControl())) {
     event.preventDefault();
-    if (kind === "keydown" && !event.repeat) {
-      clearTimeout(escapeTimer);
-      // Send one Escape pulse. Auto-repeat must not send repeated Steam Back.
-      // Chrome also provides its own two-second emergency Escape unlock.
-      escapeTimer = setTimeout(pauseControl, 2000);
-      queue({type:"key", code:"Escape", value:1});
-      queue({type:"key", code:"Escape", value:0});
-    }
-    if (kind === "keyup") { clearTimeout(escapeTimer); escapeTimer = null; }
+    if (kind === "keydown") pauseControl();
     return;
   }
   if (!active || event.isComposing) return;
@@ -279,12 +248,6 @@ document.addEventListener("pointerlockchange", () => {
   }
 });
 document.addEventListener("pointerlockerror", () => lockFailed());
-document.addEventListener("fullscreenchange", () => {
-  if (document.fullscreenElement === document.documentElement) {
-    if (lockPending && token && !document.hidden) captureReady();
-    else if (!active) void document.exitFullscreen().catch(() => {});
-  } else if ((active || lockPending) && el("mode").value === "mouse") pauseControl();
-});
 for (const button of document.querySelectorAll("[data-click]")) button.addEventListener("click", () => {
   queue({type:"button", button:button.dataset.click, value:1});
   queue({type:"button", button:button.dataset.click, value:0});

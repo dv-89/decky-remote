@@ -37,7 +37,7 @@ def verify(root):
             raise ValueError("Decky requires one plugin.json directly inside the plugin folder.")
         if json.loads(bundle.read("decky-remote/package.json"))["version"] != version:
             raise ValueError("Packaged version does not match the release.")
-        for name in ("main.py", "plugin.json", "src/index.tsx", "src/dolphin.ts", "py_modules/dolphin.py", "web/client.js", "web/index.html", "laptop/remote_helper.py", "dist/index.js"):
+        for name in ("main.py", "plugin.json", "src/index.tsx", "src/dolphin.ts", "py_modules/dolphin.py", "web/client.js", "web/index.html", "dist/index.js"):
             if bundle.read("decky-remote/" + name) != (root / name).read_bytes():
                 raise ValueError("Packaged source or built entry point is stale: " + name)
         if any("node_modules" in name.split("/") or "__pycache__" in name.split("/") for name in names):

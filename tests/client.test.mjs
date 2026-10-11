@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-function harness({pointerLock="promise", keyboardLock="promise", fullscreen="promise", secure=true, mode="mouse", coarse=false}={}) {
-  let doc, completeRequest, completeKeyboard, completeFullscreen;
+function harness({pointerLock="promise", mode="mouse", coarse=false}={}) {
+  let doc, completeRequest;
   let now=10000;
-  let lockRequests=0, keyboardUnlocks=0;
+  let lockRequests=0;
   const lockCalls=[], timers=new Map(); let nextTimer=0;
   class Element {
     constructor(id) { this.id=id; this.handlers={}; this.value=""; this.hidden=false; this.dataset={}; this.classes=new Set(); this.classList={toggle:(name,on)=>on ? this.classes.add(name) : this.classes.delete(name)}; }
@@ -25,39 +25,25 @@ function harness({pointerLock="promise", keyboardLock="promise", fullscreen="pro
       const notification=doc.emit("pointerlockchange");
       return pointerLock==="legacy" ? undefined : notification;
     }
-    requestFullscreen() {
-      lockCalls.push("fullscreen");
-      if(fullscreen==="reject")return Promise.reject(new Error("Fullscreen denied"));
-      if(fullscreen==="pending")return new Promise(resolve=>{completeFullscreen=resolve;});
-      doc.fullscreenElement=this;return doc.emit("fullscreenchange");
-    }
   }
-  const ids=["pad","padTitle","padHint","mode","status","capture","captureHint","helperHint","controller","pairPanel","pin","pairButton","pairForm","showDesktop","text","sendText","disconnect","remoteTab","textTab","remotePane","textPane"];
+  const ids=["pad","padTitle","padHint","mode","status","capture","captureHint","controller","pairPanel","pin","pairButton","pairForm","showDesktop","text","sendText","disconnect","remoteTab","textTab","remotePane","textPane"];
   const elements=Object.fromEntries(ids.map(id=>[id,new Element(id)]));
   elements.mode.value=mode;
   if(pointerLock==="unsupported")elements.pad.requestPointerLock=undefined;
   const left=new Element("left"); left.dataset.click="left";
   const enter=new Element("enter"); enter.dataset.key="Enter";
+  const back=new Element("back"); back.dataset.key="Escape";
   doc=new Element("document");
   doc.getElementById=id=>elements[id];
-  doc.querySelectorAll=selector=>selector==="[data-click]" ? [left] : [enter];
+  doc.querySelectorAll=selector=>selector==="[data-click]" ? [left] : [enter,back];
   doc.exitPointerLock=()=>{doc.pointerLockElement=null;void doc.emit("pointerlockchange");}; doc.pointerLockElement=null; doc.hidden=false;
-  doc.documentElement=new Element("root");doc.fullscreenElement=null;
-  doc.exitFullscreen=()=>{doc.fullscreenElement=null;return doc.emit("fullscreenchange");};
-  if(fullscreen==="unsupported")doc.documentElement.requestFullscreen=undefined;
   const window=new Element("window");
   window.matchMedia=()=>({matches:coarse});
-  window.isSecureContext=secure;
-  const navigator={keyboard:{lock:codes=>{
-    lockCalls.push("keyboard");assert.deepEqual(Array.from(codes),["Escape"]);
-    if(keyboardLock==="reject")return Promise.reject(new Error("Keyboard denied"));
-    if(keyboardLock==="pending")return new Promise(resolve=>{completeKeyboard=resolve;});
-    return Promise.resolve();
-  },unlock:()=>{keyboardUnlocks++;}}};
-  if(keyboardLock==="unsupported")navigator.keyboard=undefined;
   const intervals=[], calls=[];
   let reject=false;
-  const context=vm.createContext({document:doc,window,navigator,Date:{now:()=>now},AbortController,console,
+  // Deliberately omit navigator.keyboard and fullscreen: ordinary handheld
+  // HTTP pages must capture without either privileged browser feature.
+  const context=vm.createContext({document:doc,window,Date:{now:()=>now},AbortController,console,
     setTimeout:(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,at:now+ms});return id;},clearTimeout:id=>timers.delete(id),
     setInterval:fn=>intervals.push(fn),fetch:async(path,opts)=>{
     calls.push({path,data:JSON.parse(opts.body),headers:opts.headers});
@@ -65,13 +51,10 @@ function harness({pointerLock="promise", keyboardLock="promise", fullscreen="pro
   }});
   vm.runInContext(readFileSync(new URL("../web/client.js",import.meta.url),"utf8"),context);
   if(!coarse)elements.mode.value=mode;
-  return {elements,left,enter,doc,window,intervals,calls,lockCalls, reject:()=>{reject=true;},
+  return {elements,left,enter,back,doc,window,intervals,calls,lockCalls, reject:()=>{reject=true;},
     advance(ms){now+=ms;for(const [id,timer] of timers)if(timer.at<=now){timers.delete(id);timer.fn();}},
-    get keyboardUnlocks(){return keyboardUnlocks;},
     get lockRequests(){return lockRequests;},
     async completeLock(){doc.pointerLockElement=elements.pad;await doc.emit("pointerlockchange");completeRequest?.();await new Promise(resolve=>setTimeout(resolve,0));},
-    async completeKeyboard(){completeKeyboard?.();await new Promise(resolve=>setTimeout(resolve,0));},
-    async completeFullscreen(){doc.fullscreenElement=doc.documentElement;await doc.emit("fullscreenchange");completeFullscreen?.();await new Promise(resolve=>setTimeout(resolve,0));},
     async pair(){elements.pin.value="00123456";await elements.pairForm.emit("submit");},
     async flush(){await intervals[0]();await new Promise(resolve=>setTimeout(resolve,0));}};
 }
@@ -83,8 +66,7 @@ test("Start control captures mouse and keyboard, including physical clicks and b
   await h.elements.capture.emit("click");
   assert.equal(h.lockRequests,1);
   assert.equal(h.doc.pointerLockElement,h.elements.pad);
-  assert.equal(h.doc.fullscreenElement,h.doc.documentElement);
-  assert.deepEqual(h.lockCalls,["keyboard","pointer","fullscreen"]);
+  assert.deepEqual(h.lockCalls,["pointer"]);
   assert.equal(h.elements.mode.disabled,true);
   await h.doc.emit("keydown",{code:"KeyW",repeat:false});
   await h.doc.emit("keyup",{code:"KeyW"});
@@ -101,49 +83,46 @@ test("Start control captures mouse and keyboard, including physical clicks and b
   assert.deepEqual(request.data.events,[{type:"key",code:"KeyW",value:1},{type:"key",code:"KeyW",value:0},{type:"move",dx:10,dy:5},{type:"wheel",delta:-1},{type:"button",button:"left",value:1},{type:"button",button:"right",value:1},{type:"button",button:"middle",value:1},{type:"button",button:"left",value:0},{type:"button",button:"right",value:0},{type:"button",button:"middle",value:0}]);
 });
 
-test("held Escape, fullscreen exit and loss of window focus discard pending presses and release input",async()=>{
-  for (const action of ["escape","blur","hidden","unlock","fullscreen"]) {
+test("one Escape, pointer unlock and loss of window focus discard pending presses and release input",async()=>{
+  for (const action of ["escape","blur","hidden","unlock"]) {
     const h=harness(); await h.pair();await h.elements.capture.emit("click");
     await h.doc.emit("keydown",{code:"KeyA",repeat:false});
     await h.doc.emit("mousedown",{button:0});
-    if(action==="escape"){await h.doc.emit("keydown",{code:"Escape"});h.advance(2000);}
+    if(action==="escape")await h.doc.emit("keydown",{code:"Escape"});
     if(action==="blur")await h.window.emit("blur");
     if(action==="hidden"){h.doc.hidden=true;await h.doc.emit("visibilitychange");}
     if(action==="unlock"){h.doc.pointerLockElement=null;await h.doc.emit("pointerlockchange");}
-    if(action==="fullscreen"){h.doc.fullscreenElement=null;await h.doc.emit("fullscreenchange");}
     await h.flush();
     assert.deepEqual(h.calls.filter(item=>item.path==="/api/events").at(-1).data.events,[{type:"release"}]);
     assert.equal(h.elements.capture.textContent,"Start control");
     assert.equal(h.doc.pointerLockElement,null);
     assert.equal(h.elements.mode.disabled,false);
-    assert.equal(h.doc.fullscreenElement,null);assert.ok(h.keyboardUnlocks>0);
   }
 });
 
-test("single and repeated Escape taps stay captured, auto-repeat is ignored, and holding releases",async()=>{
+test("one physical Escape pauses immediately; the Back button sends Escape to the handheld",async()=>{
   for(const mode of ["mouse","touchpad"]){
     const h=harness({mode});await h.pair();await h.elements.capture.emit("click");
     assert.equal(h.lockRequests,mode==="mouse"?1:0);
+    await h.back.emit("click");await h.flush();
+    assert.deepEqual(h.calls.at(-1).data.events,[{type:"key",code:"Escape",value:1},{type:"key",code:"Escape",value:0}]);
+    assert.equal(h.elements.capture.textContent,"Pause control");
+    await h.doc.emit("keydown",{code:"KeyW"});
     await h.doc.emit("keydown",{code:"Escape",repeat:false});
     await h.doc.emit("keydown",{code:"Escape",repeat:true});
     await h.doc.emit("keyup",{code:"Escape"});await h.flush();
-    assert.deepEqual(h.calls.at(-1).data.events,[{type:"key",code:"Escape",value:1},{type:"key",code:"Escape",value:0}]);
-    assert.equal(h.elements.capture.textContent,"Pause control");
-    for(let i=0;i<3;i++){
-      h.advance(100);await h.doc.emit("keydown",{code:"Escape"});await h.doc.emit("keyup",{code:"Escape"});await h.flush();
-      assert.equal(h.elements.capture.textContent,"Pause control");
-    }
-    h.advance(2500);assert.equal(h.elements.capture.textContent,"Pause control");
-    await h.doc.emit("keydown",{code:"Escape"});await h.flush();h.advance(1999);
-    assert.equal(h.elements.capture.textContent,"Pause control");h.advance(1);await h.flush();
     assert.equal(h.elements.capture.textContent,"Start control");
     assert.deepEqual(h.calls.at(-1).data.events,[{type:"release"}]);
+    assert.equal(h.doc.pointerLockElement,null);
+    h.advance(3000);await h.flush();assert.equal(h.elements.capture.textContent,"Start control");
+    await h.elements.capture.emit("click");assert.equal(h.elements.capture.textContent,"Pause control");
   }
 });
 
 test("desktop defaults to Unlimited capture and the removed Pad control option is absent",async()=>{
   const html=readFileSync(new URL("../web/index.html",import.meta.url),"utf8");
-  assert.doesNotMatch(html,/value="window"|Pad control|three quick presses/);
+  assert.doesNotMatch(html,/value="window"|Pad control|three quick presses|helper|Keyboard Lock|hold Esc/i);
+  assert.match(html,/Unlimited capture — Esc to release/);
   const h=harness();assert.equal(h.elements.mode.value,"mouse");
   await h.pair();await h.elements.capture.emit("click");
   await h.elements.pad.emit("mouseleave");assert.equal(h.elements.capture.textContent,"Pause control");
@@ -257,64 +236,17 @@ test("legacy pointer lock waits for its change event; denial leaves input paused
 });
 
 test("cancelled or expired pending capture cannot become active when a late lock arrives",async()=>{
-  for(const action of ["cancel","escape","disconnect"]){
+  for(const action of ["cancel","escape","disconnect","hidden","timeout"]){
     const h=harness({pointerLock:"pending"});await h.pair();await h.elements.capture.emit("click");
     assert.equal(h.elements.capture.textContent,"Cancel control");
     await h.doc.emit("mousemove",{movementX:10,movementY:5});await h.doc.emit("mousedown",{button:0});await h.doc.emit("keydown",{code:"KeyA"});
     if(action==="cancel")await h.elements.capture.emit("click");
     if(action==="escape")await h.doc.emit("keydown",{code:"Escape"});
     if(action==="disconnect")await h.elements.disconnect.emit("click");
-    await h.completeLock();await h.flush();
-    assert.equal(h.doc.pointerLockElement,null);assert.equal(h.elements.capture.textContent,"Start control");
-    assert.equal(h.calls.some(call=>call.data.events?.some(event=>event.type!=="release")),false);
-  }
-});
-
-test("insecure LAN pages and unsupported browsers explain helper setup without partial capture",async()=>{
-  for(const options of [{secure:false},{keyboardLock:"unsupported"},{fullscreen:"unsupported"}]){
-    const h=harness(options);await h.pair();await h.elements.capture.emit("click");
-    assert.equal(h.elements.capture.textContent,"Start control");assert.equal(h.lockRequests,0);
-    assert.equal(h.elements.helperHint.hidden,false);assert.match(h.elements.status.textContent,/laptop helper in Chrome or Edge/);
-    assert.equal(h.doc.fullscreenElement,null);assert.equal(h.doc.pointerLockElement,null);
-  }
-});
-
-test("keyboard or fullscreen denial releases every acquired lock and never forwards input",async()=>{
-  for(const options of [{keyboardLock:"reject"},{fullscreen:"reject"}]){
-    const h=harness(options);await h.pair();await h.elements.capture.emit("click");
-    await h.doc.emit("keydown",{code:"KeyW"});await h.doc.emit("mousemove",{movementX:10,movementY:2});await h.flush();
-    assert.equal(h.elements.capture.textContent,"Start control");assert.equal(h.doc.pointerLockElement,null);
-    assert.equal(h.doc.fullscreenElement,null);assert.ok(h.keyboardUnlocks>0);
-    assert.equal(h.calls.some(call=>call.data.events?.some(event=>event.type!=="release")),false);
-  }
-});
-
-test("input waits for both keyboard and fullscreen, not just pointer capture",async()=>{
-  for(const feature of ["keyboard","fullscreen"]){
-    const h=harness(feature==="keyboard"?{keyboardLock:"pending"}:{fullscreen:"pending"});
-    await h.pair();await h.elements.capture.emit("click");
-    assert.equal(h.elements.capture.textContent,"Cancel control");
-    await h.doc.emit("keydown",{code:"KeyW"});await h.doc.emit("mousemove",{movementX:10,movementY:2});await h.flush();
-    assert.equal(h.calls.some(call=>call.path==="/api/events"),false);
-    if(feature==="keyboard")await h.completeKeyboard();else await h.completeFullscreen();
-    assert.equal(h.elements.capture.textContent,"Pause control");
-    await h.doc.emit("keydown",{code:"KeyW"});await h.flush();
-    assert.deepEqual(h.calls.at(-1).data.events,[{type:"key",code:"KeyW",value:1}]);
-    await h.elements.capture.emit("click");
-  }
-});
-
-test("cancelled, hidden or timed-out keyboard/fullscreen setup cannot revive from a late completion",async()=>{
-  for(const feature of ["keyboard","fullscreen"])for(const action of ["cancel","hidden","timeout"]){
-    const h=harness(feature==="keyboard"?{keyboardLock:"pending"}:{fullscreen:"pending"});
-    await h.pair();await h.elements.capture.emit("click");
-    if(action==="cancel")await h.elements.capture.emit("click");
     if(action==="hidden"){h.doc.hidden=true;await h.doc.emit("visibilitychange");}
     if(action==="timeout")h.advance(10000);
-    if(feature==="keyboard")await h.completeKeyboard();else await h.completeFullscreen();
-    await h.flush();
-    assert.equal(h.elements.capture.textContent,"Start control");
-    assert.equal(h.doc.fullscreenElement,null);assert.equal(h.doc.pointerLockElement,null);
+    await h.completeLock();await h.flush();
+    assert.equal(h.doc.pointerLockElement,null);assert.equal(h.elements.capture.textContent,"Start control");
     assert.equal(h.calls.some(call=>call.data.events?.some(event=>event.type!=="release")),false);
   }
 });

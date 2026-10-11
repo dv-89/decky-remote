@@ -1,4 +1,4 @@
-# Decky Remote 0.1.8
+# Decky Remote 0.1.9
 
 A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go S running SteamOS, with an action to open the system Dolphin file manager in Gaming Mode. Both devices connect to the same trusted private LAN. Look at the handheld's screen while controlling it; the remote page sends input without screen mirroring.
 
@@ -6,29 +6,29 @@ A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go 
 
 ## Install and connect
 
-[Download the installable ZIP](https://github.com/dv-89/decky-remote/releases/download/v0.1.8/decky-remote-0.1.8.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
+[Download the installable ZIP](https://github.com/dv-89/decky-remote/releases/download/v0.1.9/decky-remote-0.1.9.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
 
 ```text
-https://github.com/dv-89/decky-remote/releases/download/v0.1.8/decky-remote-0.1.8.zip
+https://github.com/dv-89/decky-remote/releases/download/v0.1.9/decky-remote-0.1.9.zip
 ```
 
 GitHub's **Download ZIP** button downloads source code, which is different from the installable plugin ZIP linked above.
 
 If you installed the earlier **Legion Remote** build, stop its remote input service and uninstall it through Decky before installing **Decky Remote**. The renamed package uses a different plugin folder; leaving the old copy enabled can occupy the same network port.
 
-To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.8 ZIP over the existing plugin, enable input again, reload the controller page and pair with the new code. Update the laptop helper too if using Unlimited capture.
+To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.9 ZIP over the existing plugin, enable input again, reload the controller page and pair with the new code.
 
-1. Transfer `release/decky-remote-0.1.8.zip` to the handheld using a USB drive or your usual file-transfer tool.
+1. Transfer `release/decky-remote-0.1.9.zip` to the handheld using a USB drive or your usual file-transfer tool.
 2. In Decky's settings, enable Developer mode and select **Install Plugin from ZIP File**. Choose this ZIP. Menu wording may differ by Decky version. The ZIP's root folder is `decky-remote/`; it is a separate installation from Legion Library.
 3. Connect the laptop and handheld to the same trusted private Wi-Fi or LAN.
 4. Open **Decky → Decky Remote → Enable remote input** on the Legion.
-5. On a laptop, download and extract the [Windows helper ZIP](https://github.com/dv-89/decky-remote/releases/download/v0.1.8/decky-remote-laptop-0.1.8-windows.zip). Run **DeckyRemoteHelper.exe** and enter the displayed handheld address (for example, `http://192.168.1.42:8765`). Keep its window open and use the localhost controller it opens in Chrome or Edge. On a phone, open the displayed handheld address directly for Touchpad control.
+5. On your laptop or phone, open the address shown in Decky directly in your browser (for example, `http://192.168.1.42:8765`). No laptop download or installation is needed.
 6. Enter the eight-digit code shown in Decky, preserving any leading zeroes. One laptop can pair at a time.
-7. **Unlimited capture** is selected on laptops: Start control enters fullscreen, captures Escape and hides your laptop cursor. Move, click, drag, scroll and type freely. On touch devices, **Touchpad** is selected automatically: drag inside the pad and use the grouped click/navigation buttons. **Send text** has its own tab.
-8. **Tap Escape** to send it to the handheld while staying in control. **Hold Escape for about two seconds** to release control and return your laptop cursor. A long press also sends one Escape at its start; auto-repeat sends no additional Escape events. Short double/triple taps do not pause. Pause, changing tools/windows, leaving fullscreen and losing mouse capture also release input.
+7. **Unlimited capture** is selected on laptops: Start control hides your laptop cursor so you can move, click, drag, scroll and type freely. On touch devices, **Touchpad** is selected automatically: drag inside the pad and use the grouped click/navigation buttons. **Send text** has its own tab.
+8. **Press Escape once** to release control and return your laptop cursor. To send Escape as Back to Steam, pause and use the on-screen **Back** button. Pause, changing tools/windows and losing mouse capture also release input.
 9. Use **Stop remote input** in Decky when finished. **Disconnect laptop** revokes its session and creates a new pairing code while leaving the listener enabled.
 
-The Windows helper is portable and includes Python; no separate runtime installation is needed. It runs only while its window is open and serves only this laptop through loopback. The laptop never needs your Steam password. No input or pairing credentials are saved to disk. The plugin always starts disabled after a restart, reload or reinstall. Linux/macOS users with Python 3.11+ can run the helper from source; see [laptop/README.md](laptop/README.md).
+The laptop never needs your Steam password or a companion app. No input or pairing credentials are saved to disk. The plugin always starts disabled after a restart, reload or reinstall.
 
 ## Dolphin in Gaming Mode
 
@@ -48,7 +48,7 @@ The previous custom Files page and its file-copy RPCs have been removed. The LAN
 - Vertical and horizontal trackpad scrolling are forwarded as mouse-wheel input. The selected handheld app must support the requested direction; scrolling does not emulate touchscreen swipes.
 - Keyboard keys include letters, digits, modifiers, arrows, navigation, F1–F12 and the numeric keypad. SteamOS interprets key positions according to its configured keyboard layout. Browser/Windows shortcuts can be intercepted before the page receives them.
 - **Send text** supports 1–128 ASCII characters plus tabs and newlines. It simulates US English key positions; set the handheld to a US English keyboard layout and turn Caps Lock off for accurate text. Unicode, IME input and clipboard synchronization are not included.
-- Unlimited capture requires browser Keyboard Lock, script-initiated fullscreen and a secure context. The helper's localhost address provides that context without certificates. The direct handheld HTTP page supports Touchpad, but cannot keep mouse capture on a single physical Escape. Unsupported browsers or denied requests leave control paused and explain the next step. Chrome's built-in long-Escape emergency exit remains available; see [Keyboard Lock documentation](https://developer.chrome.com/docs/capabilities/web-apis/keyboard-lock).
+- Unlimited capture uses browser pointer lock directly from the handheld HTTP page. A single physical Escape releases capture; use the on-screen Back button to send Escape to Steam. Unsupported browsers or denied requests leave control paused and offer Touchpad mode. Keyboard Lock, fullscreen and a laptop helper are not required.
 - Input capture requires the controller page to stay active. A website cannot capture input across other laptop applications or guarantee forwarding Windows/browser shortcuts; that would require a native laptop companion app. The laptop's screen remains local.
 - Switching windows, pausing control, or losing pad focus releases held keys/buttons. A handheld watchdog revokes the session and releases inputs after three seconds without valid traffic. Browser background throttling or device sleep can end a session; pair again using the new code. Sessions expire after one hour even with heartbeats.
 - The server listens on IPv4 TCP port 8765 and accepts only RFC1918 private or loopback source addresses. Use the numeric address shown by Decky. IPv6-only networks, DNS names, remote internet control and Bluetooth/USB control are not implemented.
@@ -64,6 +64,14 @@ The laptop page and input API are served over **unencrypted HTTP** on the handhe
 Pairing uses a random single-use eight-digit code and a random 256-bit session token kept in browser memory. Tokens are also bound to the laptop's source IP. Pairing is limited to five attempts per minute across all clients. Exact Host/Origin checks, JSON-only POST requests, blocked cross-site requests and a restrictive content security policy reduce browser-based misuse. The API accepts only validated, size-limited input events and text; it has no file access or command execution endpoint. Dolphin launch metadata is available through local Decky RPC; the LAN API cannot start apps or browse files. HTTP requests have a five-second deadline and connections are capped at sixteen.
 
 The device controls when the service runs. Uninstall through Decky's plugin settings to remove it. No persistent input service, background laptop helper or system configuration needs to be undone. The Dolphin non-Steam shortcut can be removed separately through Steam.
+
+
+## Changes in 0.1.9
+
+- Restore direct browser control at the address shown in Decky, with no laptop helper or download.
+- Press physical Escape once to pause and release mouse capture. Use the on-screen Back button to send Escape to Steam.
+- Keep Unlimited capture as the laptop default, Touchpad on mobile, the organized layout, horizontal scrolling and Dolphin launcher. Pad control stays removed.
+- Remove Keyboard Lock/fullscreen requests and helper packaging from automated releases. Each release includes the Decky plugin ZIP and checksum.
 
 ## Changes in 0.1.8
 
@@ -134,19 +142,19 @@ For a laptop-only browser demo, run `python scripts/preview.py` and open `http:/
 
 ## Automated releases
 
-[Build and release workflow](https://github.com/dv-89/decky-remote/actions/workflows/release.yml) runs the tests, builds the plugin and portable Windows helper, verifies their ZIPs and checksums, then publishes release assets when requested. GitHub's built-in token handles publishing; no personal access token or extra secret is needed.
+[Build and release workflow](https://github.com/dv-89/decky-remote/actions/workflows/release.yml) runs the tests, builds the plugin, verifies its ZIP and checksum, then publishes release assets when requested. GitHub's built-in token handles publishing; no personal access token or extra secret is needed.
 
 For a release from GitHub's website:
 
-1. Update the version in `package.json` and both root version fields in `package-lock.json` (or use `npm version 0.1.8 --no-git-tag-version`), and the versioned download links in `web/index.html`, this README and `laptop/README.md`. Commit and push the changes, along with any new code and release documentation.
+1. Update the version in `package.json` and both root version fields in `package-lock.json` (or use `npm version 0.1.9 --no-git-tag-version`), and the versioned download links in this README. Commit and push the changes, along with any new code and release documentation.
 2. Open **Actions → Build and release → Run workflow**, choose the branch, leave **Publish the package version as a GitHub release** checked, and run it. The workflow creates the matching version tag if needed and publishes the ZIP and `.sha256` after all checks pass. Uncheck Publish to test the build without releasing.
 3. Open the new release and copy the link to `decky-remote-<version>.zip` for Decky's URL installer. It uses `/releases/download/v<version>/decky-remote-<version>.zip`.
 
 Alternatively, after committing the new version, push a matching tag:
 
 ```powershell
-git tag v0.1.8
-git push origin v0.1.8
+git tag v0.1.9
+git push origin v0.1.9
 ```
 
 Tag pushes publish automatically. Regular pushes to `main` and pull requests only validate/build and save downloadable workflow artifacts. `0.x` versions and versions containing a prerelease suffix are marked **Pre-release**; stable `1.x` and later versions are published as regular releases. Titles and change notes are generated automatically.
