@@ -2,16 +2,19 @@
 window.createFileSharing = ({request, paired}) => {
   const el = id => document.getElementById(id);
   let busy = false, controller = null, generation = 0;
-  let maxFileSize = 2 * 1024 ** 3, chunkSize = 256 * 1024;
+  let chunkSize = 256 * 1024;
   function message(value, error = false) {
     el("fileStatus").textContent = value;
     el("fileStatus").classList.toggle("error", error);
   }
   function size(value) {
-    const units = ["B", "KiB", "MiB", "GiB"];
+    const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
     let unit = 0;
     while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
     return `${unit ? value.toFixed(1) : value} ${units[unit]}`;
+  }
+  function showSpace(value) {
+    el("fileSpace").textContent = `${size(value.usableBytes)} available for uploads · ${size(value.reserveBytes)} kept free`;
   }
   function setBusy(value) {
     busy = value;
@@ -60,10 +63,11 @@ window.createFileSharing = ({request, paired}) => {
     try {
       const result = await request("/api/files/list", {});
       if (current !== generation || !paired()) return;
-      maxFileSize = result.maxFileSize; chunkSize = result.chunkSize;
+      chunkSize = result.chunkSize;
+      showSpace(result);
       el("sharedFolder").value = result.folder;
       render(result.files, result.truncated);
-      if (announce) message("Ready to share files. Up to " + size(maxFileSize) + " per file.");
+      if (announce) message("Ready to share files. Available space is checked before uploading.");
     } catch (error) { if (current === generation) message(error.message, true); }
     finally { if (current === generation) el("refreshFiles").disabled = busy; }
   }
@@ -71,14 +75,21 @@ window.createFileSharing = ({request, paired}) => {
     const files = Array.from(selection);
     if (!paired() || !files.length) return;
     if (busy) { message("Finish or cancel the current upload first.", true); return; }
-    const oversized = files.find(file => file.size > maxFileSize);
-    if (oversized) { message(oversized.name + " exceeds " + size(maxFileSize) + ".", true); return; }
+    const totalSize = files.reduce((total, file) => total + file.size, 0);
+    if (files.some(file => !Number.isSafeInteger(file.size) || file.size < 0) || !Number.isSafeInteger(totalSize)) {
+      message("This selection exceeds the browser’s exact byte-size range.", true); return;
+    }
     const current = generation;
     const abort = new AbortController(); controller = abort;
     const check = () => { if (abort.signal.aborted || current !== generation || !paired()) throw new DOMException("Cancelled", "AbortError"); };
-    setBusy(true); el("fileProgress").hidden = false;
+    setBusy(true); el("fileProgress").hidden = true;
     let pending = false, completed = 0, outcome = "", failed = false;
     try {
+      message(`Checking space for ${files.length} ${files.length === 1 ? "file" : "files"} (${size(totalSize)})…`);
+      const checked = await request("/api/files/preflight", {totalSize, fileCount: files.length}, {signal: abort.signal});
+      check(); showSpace(checked); chunkSize = checked.chunkSize;
+      if (!checked.fits) throw new Error(`Not enough space: selected files need ${size(totalSize)}; ${size(checked.usableBytes)} is available after keeping ${size(checked.reserveBytes)} free.`);
+      el("fileProgress").hidden = false;
       for (const file of files) {
         if (abort.signal.aborted) throw new DOMException("Cancelled", "AbortError");
         el("fileProgress").value = 0;
@@ -138,6 +149,7 @@ window.createFileSharing = ({request, paired}) => {
   return {refresh, reset() {
     generation++; controller?.abort(); controller = null; setBusy(false);
     el("fileInput").value = ""; el("sharedFolder").value = ""; el("fileList").replaceChildren();
+    el("fileSpace").textContent = "Available space is checked before uploading.";
     el("fileCount").textContent = ""; el("fileProgress").hidden = true;
     message("Pair with the Legion to share files.");
   }};

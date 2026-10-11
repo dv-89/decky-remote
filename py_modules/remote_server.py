@@ -195,6 +195,8 @@ class RemoteServer:
         try:
             if action == "list" and not data:
                 result = self.files.listing()
+            elif action == "preflight":
+                result = self.files.preflight(data)
             elif action == "begin":
                 result = self.files.begin(data)
             elif action == "finish":
@@ -347,7 +349,7 @@ class RemoteServer:
         if method == "GET" and path in assets:
             name, content_type = assets[path]
             return 200, content_type, (self.web_dir / name).read_bytes()
-        file_actions = {"/api/files/" + name: name for name in ("list", "begin", "chunk", "finish", "cancel", "download")}
+        file_actions = {"/api/files/" + name: name for name in ("list", "preflight", "begin", "chunk", "finish", "cancel", "download")}
         if method != "POST" or path not in ("/api/pair", "/api/events", "/api/text", "/api/heartbeat", "/api/disconnect", *file_actions):
             raise HTTPError(404, "Not found")
         chunk = path == "/api/files/chunk"
@@ -361,7 +363,7 @@ class RemoteServer:
             self._authorize(peer, headers.get("authorization", ""))
         if chunk:
             offset = headers.get("x-upload-offset", "")
-            if not offset.isascii() or not offset.isdigit() or len(offset) > 12:
+            if not offset.isascii() or not offset.isdigit() or len(offset) > 16:
                 raise HTTPError(400, "Invalid upload offset")
             payload = await reader.readexactly(int(length))
             async with self.lock:

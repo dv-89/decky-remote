@@ -20,7 +20,7 @@ function harness(handler) {
     remove() {}
     select() { this.selected = true; }
   }
-  const ids = ["fileStatus", "fileInput", "refreshFiles", "cancelUpload", "fileList", "fileCount", "sharedFolder", "fileProgress", "fileDrop"];
+  const ids = ["fileStatus", "fileSpace", "fileInput", "refreshFiles", "cancelUpload", "fileList", "fileCount", "sharedFolder", "fileProgress", "fileDrop"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const document = {getElementById: id => elements[id], createElement: () => new Element(), body: new Element()};
   let paired = true;
@@ -29,7 +29,8 @@ function harness(handler) {
   const api = context.window.createFileSharing({paired: () => paired, request: async (path, data, options) => {
     calls.push({path, data, options});
     if (handler) { const result = await handler(path, data, options); if (result !== undefined) return result; }
-    if (path.endsWith("list")) return {files: [], folder: "/home/deck/Downloads/Decky Remote", maxFileSize: 2 * 1024 ** 3, chunkSize: 4};
+    if (path.endsWith("list")) return {files: [], folder: "/home/deck/Downloads/Decky Remote", freeBytes: 100 * 1024 ** 3, usableBytes: 100 * 1024 ** 3 - 64 * 1024 ** 2, reserveBytes: 64 * 1024 ** 2, chunkSize: 4};
+    if (path.endsWith("preflight")) return {fits: true, usableBytes: 100 * 1024 ** 3 - 64 * 1024 ** 2, reserveBytes: 64 * 1024 ** 2, chunkSize: 4};
     if (path.endsWith("begin")) return {id: "upload", chunkSize: 4};
     if (path.endsWith("chunk")) return {offset: Number(options.headers["X-Upload-Offset"]) + options.body.size};
     if (path.endsWith("finish")) return {name: "saved.txt"};
@@ -55,8 +56,9 @@ test("multiple file picker uploads are sequential, chunked, and show completion"
 });
 
 test("list renders filenames as text and downloads with a temporary same-origin link", async () => {
-  const h = harness(path => path.endsWith("list") ? {files: [{name: "<img onerror=bad>.txt", size: 1200}], folder: "/home/deck/Downloads/Decky Remote", maxFileSize: 2 ** 31, chunkSize: 4} : undefined);
+  const h = harness(path => path.endsWith("list") ? {files: [{name: "<img onerror=bad>.txt", size: 1200}], folder: "/home/deck/Downloads/Decky Remote", usableBytes: 1024 ** 3, reserveBytes: 64 * 1024 ** 2, chunkSize: 4} : undefined);
   await h.api.refresh();
+  assert.match(h.elements.fileSpace.textContent, /1.0 GiB available.*64.0 MiB kept free/);
   assert.equal(h.elements.fileList.children[0].children[0].children[0].textContent, "<img onerror=bad>.txt");
   h.elements.fileList.children[0].children[1].emit("click"); await settle();
   assert.deepEqual(h.links, [{href: "/download/" + "a".repeat(48), download: "<img onerror=bad>.txt"}]);
@@ -65,16 +67,45 @@ test("list renders filenames as text and downloads with a temporary same-origin 
 });
 
 test("foreign download links are rejected", async () => {
-  const h = harness(path => path.endsWith("list") ? {files: [{name: "a", size: 1}]} : path.endsWith("download") ? {url: "https://evil.example"} : undefined);
+  const h = harness(path => path.endsWith("list") ? {files: [{name: "a", size: 1}], usableBytes: 1024, reserveBytes: 64 * 1024 ** 2, chunkSize: 4} : path.endsWith("download") ? {url: "https://evil.example"} : undefined);
   await h.api.refresh(); h.elements.fileList.children[0].children[1].emit("click"); await settle();
   assert.equal(h.links.length, 0); assert.match(h.elements.fileStatus.textContent, /Invalid download link/);
 });
 
-test("oversized files and dropped directories do not start uploads", async () => {
-  const h = harness(); await h.upload([{name: "big", size: 2 ** 31 + 1}]);
-  assert.equal(h.calls.length, 0); assert.match(h.elements.fileStatus.textContent, /exceeds/);
+test("imprecise file sizes and dropped directories do not start uploads", async () => {
+  const h = harness(); await h.upload([{name: "big", size: Number.MAX_SAFE_INTEGER + 1}]);
+  assert.equal(h.calls.length, 0); assert.match(h.elements.fileStatus.textContent, /exact byte-size range/);
   h.elements.fileDrop.emit("drop", {dataTransfer: {items: [{webkitGetAsEntry: () => ({isDirectory: true})}], files: [file("a", "a")]}});
   await settle(); assert.equal(h.calls.length, 0); assert.match(h.elements.fileStatus.textContent, /Folder uploads/);
+});
+
+test("whole selection is checked before any file begins and insufficient space is explained", async () => {
+  const h = harness(path => path.endsWith("preflight") ? {fits: false, usableBytes: 6, reserveBytes: 64 * 1024 ** 2, chunkSize: 4} : undefined);
+  await h.upload([file("first", "1234"), file("second", "5678")]);
+  assert.equal(JSON.stringify(h.calls[0].data), JSON.stringify({totalSize: 8, fileCount: 2}));
+  assert.equal(h.calls.some(call => /begin|chunk|finish|cancel/.test(call.path)), false);
+  assert.match(h.elements.fileStatus.textContent, /need 8 B; 6 B is available/);
+  assert.equal(h.elements.fileInput.disabled, false);
+});
+
+test("files above 2 GiB reach the server space check instead of being rejected locally", async () => {
+  const h = harness(path => { if (path.endsWith("begin")) throw new Error("Test stops before sending large data"); });
+  await h.upload([{name: "large.iso", size: 5 * 1024 ** 3}]);
+  assert.equal(h.calls[0].path, "/api/files/preflight");
+  assert.equal(h.calls[0].data.totalSize, 5 * 1024 ** 3);
+  assert.equal(h.calls.find(call => call.path.endsWith("begin")).data.size, 5 * 1024 ** 3);
+});
+
+test("cancelling or resetting a pending space check never starts or cancels an upload", async () => {
+  for (const reset of [false, true]) {
+    let resolveCheck;
+    const h = harness(path => path.endsWith("preflight") ? new Promise(resolve => { resolveCheck = resolve; }) : undefined);
+    h.elements.fileInput.files = [file("a", "123")]; h.elements.fileInput.emit("change"); await settle();
+    if (reset) h.unpair(); else h.elements.cancelUpload.emit("click");
+    resolveCheck({fits: true, chunkSize: 4, usableBytes: 100, reserveBytes: 64}); await settle();
+    assert.equal(h.calls.some(call => /begin|chunk|finish|cancel/.test(call.path)), false);
+    assert.match(h.elements.fileStatus.textContent, reset ? /Pair with the Legion/ : /Upload cancelled/);
+  }
 });
 
 test("lost begin response cancels the session's uncertain upload", async () => {

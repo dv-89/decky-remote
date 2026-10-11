@@ -37,7 +37,8 @@
         <label for="sharedFolder">Shared folder on the Legion — select to copy its path</label>
         <input id="sharedFolder" readonly value="" placeholder="Downloads/Decky Remote">
         <p class="small">Use Dolphin to move existing files into this folder. Uploads with an existing name get a new name; your files are kept.</p>
-        <div id="fileDrop"><label for="fileInput">Choose files to upload, or drop them here</label><input id="fileInput" type="file" multiple><p class="small">Up to 2 GiB per file. Choose individual files; folders are not supported yet.</p></div>
+        <p id="fileSpace" class="small">Available space is checked before uploading.</p>
+        <div id="fileDrop"><label for="fileInput">Choose files to upload, or drop them here</label><input id="fileInput" type="file" multiple><p class="small">Files larger than 2 GiB are supported when space permits. Choose individual files; folders are not supported yet.</p></div>
         <p id="fileStatus" role="status" aria-live="polite">Open Files after pairing to load the shared folder.</p>
         <progress id="fileProgress" max="100" value="0" aria-label="Upload progress" hidden></progress>
         <button id="cancelUpload" class="danger" hidden>Cancel upload</button>

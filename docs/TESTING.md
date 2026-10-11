@@ -12,6 +12,14 @@ For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and t
 
 For 0.1.2, TypeScript typecheck, Rollup build and the compiled-plugin check passed. All 16 Python backend/protocol/HTTP checks and 10 browser-client checks passed, including horizontal/diagonal scrolling, pixel/line/page units, fractional deltas, axis limits, pause resets, HTTP delivery and packed Linux horizontal-wheel events. Real horizontal scrolling on the handheld remains pending device validation.
 
+## Version 0.1.12
+
+The old 2 GiB cap is replaced by available space minus a 64 MiB reserve. The browser checks the full selection before any file begins; the server checks again on begin and every chunk write. Tests cover whole-batch capacity, exact reserve boundaries, invalid sizes/counts, space dropping after a successful check and during a transfer, authenticated HTTP capacity checks, and cancellation/session reset during a pending capacity request. A sparse file exercises real writes and download descriptors on both sides of the 2 GiB offset boundary without allocating or transferring the entire sparse gap. This establishes size/offset handling, not a completed multi-gigabyte transfer on hardware.
+
+All 43 Linux Python checks and 56 Node checks (16 client, 11 Files, 28 Dolphin, 1 bundle) pass with TypeScript, Rollup and archive verification. The updated mobile preview displays live usable space; its small-file browser upload/download still uses a disposable Linux folder. [Mobile Files preview](file-sharing.png).
+
+On the Legion, upload a real file larger than 2 GiB and compare its SHA-256 after download. Select multiple files whose combined size exceeds usable space and confirm none starts. Confirm the free-space display decreases after uploading and Refresh updates it after Dolphin moves files. Large transfers must finish within the existing one-hour pairing session; interruption requires restarting. Browser/OS handling of laptop destination space and filesystems with per-file limits remain outside the Legion preflight check.
+
 ## Version 0.1.11
 
 Bidirectional transfers use a dedicated `Downloads/Decky Remote` folder. Linux filesystem tests cover byte-for-byte chunked uploads/downloads, SHA-256, zero-byte and Unicode files, duplicate-name preservation, owner permissions, path/hidden/control/invalid-Unicode rejection, symlinks, FIFOs, replaced temporary files, wrong offsets, incomplete uploads, idle/cancel/reset cleanup, download ticket limits/expiry/IP/token/reuse/replacement, bounded listings, low disk space and short writes. Real HTTP tests cover streamed downloads and their headers, authorization before body reads and folder access, cross-origin/cross-site rejection, chunk limits, disconnect cleanup and disk errors leaving input usable.

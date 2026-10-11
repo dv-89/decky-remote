@@ -6,7 +6,9 @@ import secrets
 import stat
 import time
 
-MAX_FILE = 2 * 1024**3
+# Browser byte offsets must remain exact when represented as JavaScript numbers.
+MAX_SAFE_SIZE = (1 << 53) - 1
+RESERVE = 64 * 1024**2
 CHUNK = 256 * 1024
 FOLDER = "Decky Remote"
 
@@ -90,22 +92,35 @@ class FileShare:
                     continue
         entries.sort(key=lambda item: item["name"].casefold())
         return {"folder": str(self.home / "Downloads" / FOLDER), "files": entries,
-                "truncated": truncated, "maxFileSize": MAX_FILE, "chunkSize": CHUNK}
+                "truncated": truncated, "maxSafeSize": MAX_SAFE_SIZE, "chunkSize": CHUNK,
+                **self.space()}
+
+    def space(self):
+        capacity = os.statvfs(self._directory())
+        free = max(0, capacity.f_bavail) * capacity.f_frsize
+        return {"freeBytes": free, "usableBytes": max(0, free - RESERVE), "reserveBytes": RESERVE}
+
+    def preflight(self, data):
+        if (set(data) != {"totalSize", "fileCount"}
+                or type(data["totalSize"]) is not int or not 0 <= data["totalSize"] <= MAX_SAFE_SIZE
+                or type(data["fileCount"]) is not int or not 1 <= data["fileCount"] <= MAX_SAFE_SIZE):
+            raise TransferError(400, "Provide a valid total byte size and file count")
+        space = self.space()
+        return {**space, "fits": data["totalSize"] + RESERVE <= space["freeBytes"], "chunkSize": CHUNK}
 
     def begin(self, data):
         if set(data) != {"name", "size"}:
             raise TransferError(400, "Provide a filename and file size")
         name = filename(data["name"])
         size = data["size"]
-        if type(size) is not int or not 0 <= size <= MAX_FILE:
-            raise TransferError(413, "Files must be at most 2 GiB each")
+        if type(size) is not int or not 0 <= size <= MAX_SAFE_SIZE:
+            raise TransferError(400, "File size must be an exact nonnegative byte count supported by the browser")
         self.expire()
         if self.upload:
             raise TransferError(409, "Another file is uploading; finish or cancel it first")
         directory = self._directory()
-        capacity = os.statvfs(directory)
-        if capacity.f_bavail * capacity.f_frsize < size + 64 * 1024**2:
-            raise TransferError(507, "Not enough free space on the Legion")
+        if self.space()["freeBytes"] < size + RESERVE:
+            raise TransferError(507, "Not enough free space on the Legion; refresh Files to check available space")
         identifier = secrets.token_hex(16)
         temporary = ".decky-remote-" + identifier + ".part"
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=directory)
@@ -130,6 +145,9 @@ class FileShare:
             raise TransferError(409, "Upload offset does not match; send the file again")
         if not 1 <= len(payload) <= CHUNK or offset + len(payload) > upload["size"]:
             raise TransferError(413, "Invalid upload chunk size")
+        if self.space()["freeBytes"] < len(payload) + RESERVE:
+            self.cancel()
+            raise TransferError(507, "Free space changed during upload; the unfinished file was removed. Refresh Files and try again")
         view = memoryview(payload)
         while view:
             written = os.write(upload["fd"], view)
@@ -202,9 +220,9 @@ class FileShare:
         if not stat.S_ISREG(info.st_mode) or info.st_uid != self.owner or not info.st_mode & 0o400:
             os.close(descriptor)
             raise TransferError(403, "Only readable regular files owned by the Steam user can be shared")
-        if info.st_size > MAX_FILE:
+        if info.st_size > MAX_SAFE_SIZE:
             os.close(descriptor)
-            raise TransferError(413, "Files must be at most 2 GiB each")
+            raise TransferError(413, "File size exceeds the browser's exact byte-offset range")
         return descriptor, info
 
     def grant(self, data, token, peer):

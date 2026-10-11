@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "py_modules"))
-from file_share import CHUNK, MAX_FILE, FileShare, TransferError, filename
+from file_share import CHUNK, MAX_SAFE_SIZE, RESERVE, FileShare, TransferError, filename
 from remote_server import RemoteServer
 from test_remote import FakeInput
 
@@ -63,7 +63,7 @@ class FileTests(unittest.TestCase):
         for name in ("", ".hidden", "..", "../outside", "/tmp/test", "C:\\test", "x:y", "a\n", "a\0", "a\x7f", "a" * 201, "\ud800", None):
             with self.subTest(name=repr(name)), self.assertRaises(TransferError):
                 filename(name)
-        for value in (True, -1, MAX_FILE + 1, 1.5, "1"):
+        for value in (True, -1, MAX_SAFE_SIZE + 1, 1.5, "1"):
             with self.assertRaises(TransferError):
                 self.files.begin({"name": "a", "size": value})
         self.assertFalse(self.folder.exists())
@@ -180,6 +180,69 @@ class FileTests(unittest.TestCase):
             self.saved("short", b"1234567")
         self.assertEqual((self.folder / "short").read_bytes(), b"1234567")
 
+    def capacity(self, free):
+        return patch("file_share.os.statvfs", return_value=type("Space", (), {"f_bavail": free, "f_frsize": 1})())
+
+    def test_preflight_checks_entire_batch_and_preserves_headroom(self):
+        for free, total, fits in ((RESERVE - 1, 0, False), (RESERVE, 0, True), (RESERVE + 8, 8, True), (RESERVE + 7, 8, False)):
+            with self.capacity(free):
+                checked = self.files.preflight({"totalSize": total, "fileCount": 2})
+                self.assertEqual(checked["fits"], fits)
+                self.assertEqual(checked["usableBytes"], max(0, free - RESERVE))
+        self.assertIsNone(self.files.upload)
+        self.assertFalse(list(self.folder.iterdir()))
+        for data in ({}, {"totalSize": True, "fileCount": 1}, {"totalSize": -1, "fileCount": 1}, {"totalSize": MAX_SAFE_SIZE + 1, "fileCount": 1}, {"totalSize": 1, "fileCount": 0}, {"totalSize": 1, "fileCount": True}):
+            with self.assertRaises(TransferError):
+                self.files.preflight(data)
+
+    def test_begin_rechecks_space_after_a_successful_preflight(self):
+        with self.capacity(RESERVE + 8):
+            self.assertTrue(self.files.preflight({"totalSize": 8, "fileCount": 2})["fits"])
+        with self.capacity(RESERVE + 3):
+            with self.assertRaises(TransferError) as caught:
+                self.files.begin({"name": "file", "size": 4})
+        self.assertEqual(caught.exception.status, 507)
+        self.assertIsNone(self.files.upload)
+        self.assertFalse(list(self.folder.iterdir()))
+
+    def test_free_space_drop_during_upload_removes_partial_file(self):
+        with self.capacity(RESERVE + 10):
+            upload = self.files.begin({"name": "file", "size": 10})
+            self.files.append(upload["id"], 0, b"hello")
+        with self.capacity(RESERVE + 4):
+            with self.assertRaises(TransferError) as caught:
+                self.files.append(upload["id"], 5, b"world")
+        self.assertEqual(caught.exception.status, 507)
+        self.assertIsNone(self.files.upload)
+        self.assertFalse(list(self.folder.iterdir()))
+
+    def test_large_sizes_offsets_and_sparse_download_are_not_limited_to_two_gib(self):
+        boundary = 2 * 1024**3
+        with self.capacity(10 * 1024**3):
+            checked = self.files.preflight({"totalSize": 5 * 1024**3, "fileCount": 1})
+            self.assertTrue(checked["fits"])
+            upload = self.files.begin({"name": "large", "size": boundary + 3})
+            # Model previously received data with a sparse gap. This verifies
+            # real writes and exact offsets at the boundary without sending 2 GiB.
+            self.files.upload["offset"] = boundary - 3
+            os.lseek(self.files.upload["fd"], boundary - 3, os.SEEK_SET)
+            result = self.files.append(upload["id"], boundary - 3, b"abcdef")
+            self.assertEqual(result["offset"], boundary + 3)
+            self.assertEqual(os.fstat(self.files.upload["fd"]).st_size, boundary + 3)
+            self.files.cancel()
+        with (self.folder / "large").open("wb") as file:
+            file.seek(boundary - 3)
+            file.write(b"abcdef")
+        grant = self.files.grant({"name": "large"}, "token", "peer")
+        fd, _, size = self.files.download(grant["url"].split("/")[-1], "token", "peer")
+        try:
+            self.assertEqual(size, boundary + 3)
+            os.lseek(fd, boundary - 3, os.SEEK_SET)
+            self.assertEqual(os.read(fd, 6), b"abcdef")
+        finally:
+            os.close(fd)
+        self.assertEqual(self.files.listing()["files"][0]["size"], boundary + 3)
+
     def test_replaced_temporary_does_not_publish_or_delete_replacement(self):
         upload = self.files.begin({"name": "a", "size": 0})
         temporary = self.folder / self.files.upload["temporary"]
@@ -253,7 +316,7 @@ class FileHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code, 401)
 
     async def test_auth_before_body_and_folder_access_origin_and_chunk_limits(self):
-        for path, data in (("/api/files/list", {}), ("/api/files/begin", {"name": "a", "size": 1}), ("/api/files/chunk", b"a")):
+        for path, data in (("/api/files/list", {}), ("/api/files/preflight", {"totalSize": 1, "fileCount": 1}), ("/api/files/begin", {"name": "a", "size": 1}), ("/api/files/chunk", b"a")):
             code, _, _ = await self.request(path, data, token="wrong", declared=100)
             self.assertEqual(code, 401)
         self.assertFalse((Path(self.temp.name) / "Downloads").exists())
@@ -265,6 +328,20 @@ class FileHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code, 413)
         code, _, _ = await self.request("/files.js")
         self.assertEqual(code, 200)
+
+    async def test_preflight_reports_live_space_and_rejects_invalid_totals(self):
+        with patch("file_share.os.statvfs", return_value=type("Space", (), {"f_bavail": RESERVE + 5, "f_frsize": 1})()):
+            code, _, body = await self.request("/api/files/preflight", {"totalSize": 6, "fileCount": 2})
+            self.assertEqual(code, 200)
+            self.assertFalse(json.loads(body)["fits"])
+            self.assertEqual(json.loads(body)["usableBytes"], 5)
+            code, _, body = await self.request("/api/files/list", {})
+            self.assertEqual(json.loads(body)["reserveBytes"], RESERVE)
+            code, _, _ = await self.request("/api/files/begin", {"name": "no-space", "size": 6})
+            self.assertEqual(code, 507)
+        code, _, _ = await self.request("/api/files/preflight", {"totalSize": -1, "fileCount": 1})
+        self.assertEqual(code, 400)
+        self.assertIsNone(self.files.upload)
 
     async def test_disconnect_cleans_partial_upload_and_revokes_download(self):
         await self.upload()
