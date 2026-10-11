@@ -1,0 +1,10 @@
+{
+  "name": "Legion Remote",
+  "author": "Custom Decky Plugins",
+  "flags": ["root"],
+  "api_version": 1,
+  "publish": {
+    "tags": ["utility", "input"],
+    "description": "Use a paired laptop browser as a local keyboard and mouse for SteamOS."
+  }
+}
