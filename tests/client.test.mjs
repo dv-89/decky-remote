@@ -87,6 +87,42 @@ test("Escape and loss of window focus discard pending presses and release input"
   }
 });
 
+test("horizontal and diagonal scrolling forwards both axes in full control and touchpad modes",async()=>{
+  for (const mode of ["mouse", "touchpad"]) {
+    const h=harness();await h.pair();h.elements.mode.value=mode;await h.elements.capture.emit("click");
+    const target=mode==="mouse" ? h.doc : h.elements.pad;
+    // Fractional trackpad deltas must accumulate, independently on each axis.
+    await target.emit("wheel",{deltaX:30.5,deltaY:0,deltaMode:0});
+    await target.emit("wheel",{deltaX:49.5,deltaY:0,deltaMode:0});
+    await target.emit("wheel",{deltaX:-160,deltaY:80,deltaMode:0});
+    await target.emit("wheel",{deltaX:5,deltaY:-5,deltaMode:1});
+    await target.emit("wheel",{deltaX:-0.4,deltaY:0.4,deltaMode:2});
+    await target.emit("wheel",{deltaX:800,deltaY:-800,deltaMode:0});
+    await h.flush();
+    assert.deepEqual(h.calls.at(-1).data.events,[
+      {type:"wheel",delta:0,deltaX:1},
+      {type:"wheel",delta:-1,deltaX:-2},
+      {type:"wheel",delta:1,deltaX:1},
+      {type:"wheel",delta:-1,deltaX:-1},
+      {type:"wheel",delta:10,deltaX:10},
+    ]);
+  }
+});
+
+test("pausing clears fractional scrolling and ignores gestures while paused",async()=>{
+  const h=harness();await h.pair();await h.elements.capture.emit("click");
+  await h.doc.emit("wheel",{deltaX:40,deltaY:40,deltaMode:0});
+  await h.elements.capture.emit("click");await h.flush();
+  const count=h.calls.length;
+  await h.doc.emit("wheel",{deltaX:800,deltaY:800,deltaMode:0});await h.flush();
+  assert.equal(h.calls.length,count);
+  await h.elements.capture.emit("click");
+  await h.doc.emit("wheel",{deltaX:40,deltaY:40,deltaMode:0});await h.flush();
+  assert.equal(h.calls.length,count);
+  await h.doc.emit("wheel",{deltaX:40,deltaY:40,deltaMode:0});await h.flush();
+  assert.deepEqual(h.calls.at(-1).data.events,[{type:"wheel",delta:-1,deltaX:1}]);
+});
+
 test("unsupported text stays local; supported text and disconnect use authenticated requests",async()=>{
   const h=harness();await h.pair();
   h.elements.text.value="é";await h.elements.sendText.emit("click");

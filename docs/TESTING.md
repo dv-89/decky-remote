@@ -10,6 +10,8 @@ The 0.1.1 client checks additionally exercise one-click capture, free mouse move
 
 For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and the compiled-plugin check passed. In the in-app browser, pairing and the touchpad fallback were verified with simulated input. This browser denied pointer lock, so real mouse capture still needs validation in the user's desktop browser using the checklist below. The Linux backend is unchanged from the version with 14 passing backend checks.
 
+For 0.1.2, TypeScript typecheck, Rollup build and the compiled-plugin check passed. All 16 Python backend/protocol/HTTP checks and 10 browser-client checks passed, including horizontal/diagonal scrolling, pixel/line/page units, fractional deltas, axis limits, pause resets, HTTP delivery and packed Linux horizontal-wheel events. Real horizontal scrolling on the handheld remains pending device validation.
+
 ## On the Legion Go S
 
 - Install the release ZIP and confirm **Decky Remote** appears alongside existing plugins.
@@ -18,6 +20,7 @@ For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and t
 - On the laptop open that address. Try an incorrect code, then the correct one. Confirm Decky displays the laptop's IP and hides the consumed code.
 - In a harmless Steam search field, send `Hello, Legion! 123` and verify punctuation, case and digits with a US keyboard layout and Caps Lock off. Try the arrow, Enter, Backspace and Escape buttons.
 - Leave **Full control — mouse & keyboard** selected. Click **Start control** once: the cursor must hide and movement must reach the handheld without holding down any button or dragging inside the pad. Type, test physical left/right/middle clicks and scrolling, hold a button to drag, and hold left/right together to verify independent releases.
+- In Desktop Mode, open a page or application with a horizontal scrollbar. In Full control, swipe two fingers left and right on the laptop trackpad and confirm horizontal scrolling reaches the handheld. Test vertical and diagonal scrolling, then repeat over the pad in Touchpad mode. Pause and resume between partial gestures to confirm there is no leftover scrolling. Steam Gaming Mode views may not respond to horizontal wheel input.
 - Hold a key/button and press Escape or switch windows. Verify pointer lock ends, the laptop cursor returns, and held inputs release immediately or within the three-second watchdog limit. Start control again and verify capture resumes.
 - Select **Touchpad — manual fallback** after pausing. Verify dragging the pad, manual click buttons, scrolling and focused typing still work. Text typed in Send text must stay local until sent.
 - If the browser denies pointer lock, verify the page remains paused and suggests Touchpad mode. Cancel a pending capture request and verify it never activates later without a new Start control action.

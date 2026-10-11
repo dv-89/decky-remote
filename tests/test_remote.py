@@ -80,7 +80,7 @@ class ProtocolTests(unittest.TestCase):
 
     def test_events_text_and_disconnect(self):
         token = self.pair()
-        events = [{"type":"key","code":"KeyW","value":1}, {"type":"move","dx":14,"dy":-4}, {"type":"button","button":"left","value":1}, {"type":"wheel","delta":-1}]
+        events = [{"type":"key","code":"KeyW","value":1}, {"type":"move","dx":14,"dy":-4}, {"type":"button","button":"left","value":1}, {"type":"wheel","delta":-1}, {"type":"wheel","delta":0,"deltaX":1}]
         self.send("/api/events", {"events":events}, token)
         self.assertEqual(self.server.input.events, events)
         self.send("/api/text", {"text":"Hello!\n"}, token)
@@ -121,6 +121,18 @@ class ProtocolTests(unittest.TestCase):
         for value in ("8.8.8.8", "100.64.0.1", "172.32.0.1", "::1", "bad"):
             self.assertFalse(local_address(value))
 
+    def test_scroll_axes_are_bounded_integers_and_vertical_events_remain_valid(self):
+        for event in ({"type":"wheel","delta":-10}, {"type":"wheel","delta":10,"deltaX":-10}, {"type":"wheel","delta":0,"deltaX":1}):
+            self.assertEqual(validate_event(event), event)
+        for value in (True, 1.5, "1", None, -11, 11):
+            with self.assertRaises(ValueError):
+                validate_event({"type":"wheel","delta":0,"deltaX":value})
+            with self.assertRaises(ValueError):
+                validate_event({"type":"wheel","delta":value,"deltaX":1})
+        for event in ({"type":"wheel","deltaX":1}, {"type":"wheel","delta":1,"deltaX":1,"extra":0}):
+            with self.assertRaises(ValueError):
+                validate_event(event)
+
 
 class InputTests(unittest.TestCase):
     def make_input(self):
@@ -158,6 +170,19 @@ class InputTests(unittest.TestCase):
         self.assertEqual(KEYS["F11"],87)
         self.assertEqual(KEYS["F12"],88)
 
+    def test_scroll_direction_and_synchronized_diagonal_events(self):
+        device = self.make_input()
+        writes = []
+        with patch.object(remote_input.os,"write", side_effect=lambda fd,data: writes.append((fd,struct.unpack("=qqHHi",data))) or len(data)):
+            device.apply({"type":"wheel","delta":0,"deltaX":2})
+            device.apply({"type":"wheel","delta":-1,"deltaX":-2})
+            device.apply({"type":"wheel","delta":1})
+        self.assertEqual(writes, [
+            (11,(0,0,2,6,2)), (11,(0,0,0,0,0)),
+            (11,(0,0,2,8,-1)), (11,(0,0,2,6,-2)), (11,(0,0,0,0,0)),
+            (11,(0,0,2,8,1)), (11,(0,0,0,0,0)),
+        ])
+
     def test_virtual_keyboard_and_mouse_are_separate_devices(self):
         ioctl_calls = []
         fcntl = types.SimpleNamespace(ioctl=lambda *args: ioctl_calls.append(args))
@@ -168,6 +193,7 @@ class InputTests(unittest.TestCase):
             self.assertEqual(len(setups),2)
             self.assertEqual(len(setups[0][2]),92)
             self.assertIn((11,0x40045566,8),ioctl_calls)
+            self.assertIn((11,0x40045566,6),ioctl_calls)
             device.close()
             self.assertIn((10,0x5502),ioctl_calls)
 
@@ -214,6 +240,10 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         code,_,_ = await self.request("/api/events", {"events":[{"type":"key","code":"KeyA","value":1}]},token)
         self.assertEqual(code,200)
         self.assertEqual(self.server.input.events[0]["code"],"KeyA")
+        scroll = {"type":"wheel","delta":-1,"deltaX":2}
+        code,_,_ = await self.request("/api/events", {"events":[scroll]},token)
+        self.assertEqual(code,200)
+        self.assertEqual(self.server.input.events[-1],scroll)
 
     async def test_cross_origin_dns_rebinding_duplicate_headers_and_paths(self):
         code,_,_ = await self.request("/api/pair", {"pin":self.server.pin},origin="http://evil.example")

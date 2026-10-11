@@ -2,7 +2,7 @@
 const el = id => document.getElementById(id);
 const pad = el("pad");
 let token = "", active = false, events = [], flushing = false, pairing = false;
-let serial = Promise.resolve(), drag = null, wheel = 0;
+let serial = Promise.resolve(), drag = null, wheel = 0, wheelX = 0;
 let lockPending = false, lockTimer = null, captureRequest = 0;
 const supported = new Set([
   ...Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ", letter => "Key" + letter),
@@ -36,7 +36,7 @@ function setCapture(value) {
   else {
     captureRequest++;
     drag = null;
-    wheel = 0;
+    wheel = wheelX = 0;
     events = token ? [{type:"release"}] : [];
     if (document.pointerLockElement === pad) document.exitPointerLock();
   }
@@ -216,9 +216,17 @@ document.addEventListener("contextmenu", event => { if (fullControl()) event.pre
 document.addEventListener("auxclick", event => { if (fullControl()) event.preventDefault(); });
 function scroll(event) {
   event.preventDefault();
-  wheel += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 200 : 1);
+  const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 200 : 1;
+  wheel += (event.deltaY || 0) * scale;
+  wheelX += (event.deltaX || 0) * scale;
   const steps = Math.max(-10, Math.min(10, Math.trunc(wheel / 80)));
-  if (steps) { queue({type:"wheel", delta:-steps}); wheel -= steps * 80; }
+  const stepsX = Math.max(-10, Math.min(10, Math.trunc(wheelX / 80)));
+  if (steps || stepsX) {
+    // Linux vertical wheel values are positive up; horizontal values are positive right.
+    queue({type:"wheel", delta:steps ? -steps : 0, ...(stepsX ? {deltaX:stepsX} : {})});
+    wheel -= steps * 80;
+    wheelX -= stepsX * 80;
+  }
 }
 document.addEventListener("wheel", event => { if (fullControl()) scroll(event); }, {passive:false});
 pad.addEventListener("wheel", event => { if (active && el("mode").value === "touchpad") scroll(event); }, {passive:false});

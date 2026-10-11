@@ -55,8 +55,8 @@ def validate_event(event):
     elif kind == "move" and set(event) == {"type", "dx", "dy"}:
         if all(type(event[key]) is int and -1000 <= event[key] <= 1000 for key in ("dx", "dy")):
             return event
-    elif kind == "wheel" and set(event) == {"type", "delta"}:
-        if type(event["delta"]) is int and -10 <= event["delta"] <= 10:
+    elif kind == "wheel" and set(event) in ({"type", "delta"}, {"type", "delta", "deltaX"}):
+        if all(type(event[key]) is int and -10 <= event[key] <= 10 for key in ("delta", "deltaX") if key in event):
             return event
     elif kind == "release" and set(event) == {"type"}:
         return event
@@ -73,7 +73,7 @@ class UInput:
         self.held = set()
         try:
             self.keyboard = self._device("Decky Remote Keyboard", sorted(set(KEYS.values())), ())
-            self.mouse = self._device("Decky Remote Mouse", BUTTONS.values(), (0, 1, 8))
+            self.mouse = self._device("Decky Remote Mouse", BUTTONS.values(), (0, 1, 6, 8))
         except BaseException:
             self.close()
             raise
@@ -129,7 +129,10 @@ class UInput:
             self._emit(self.mouse, 2, 1, event["dy"])
             self._sync(self.mouse)
         elif kind == "wheel":
-            self._emit(self.mouse, 2, 8, event["delta"])
+            if event["delta"]:
+                self._emit(self.mouse, 2, 8, event["delta"])  # REL_WHEEL, positive up
+            if event.get("deltaX"):
+                self._emit(self.mouse, 2, 6, event["deltaX"])  # REL_HWHEEL, positive right
             self._sync(self.mouse)
         else:
             self.release()

@@ -1,4 +1,4 @@
-# Decky Remote 0.1.1
+# Decky Remote 0.1.2
 
 A separate Decky plugin that turns a laptop browser into a keyboard and mouse for a Legion Go S running SteamOS. Both devices connect to the same trusted private LAN. Look at the handheld's screen while controlling it; this version sends input only.
 
@@ -6,19 +6,19 @@ A separate Decky plugin that turns a laptop browser into a keyboard and mouse fo
 
 ## Install and connect
 
-[Download the installable ZIP](https://github.com/dv-89/decky-remote/raw/refs/heads/main/release/decky-remote-0.1.1.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
+[Download the installable ZIP](https://github.com/dv-89/decky-remote/raw/refs/heads/main/release/decky-remote-0.1.2.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
 
 ```text
-https://raw.githubusercontent.com/dv-89/decky-remote/main/release/decky-remote-0.1.1.zip
+https://raw.githubusercontent.com/dv-89/decky-remote/main/release/decky-remote-0.1.2.zip
 ```
 
 GitHub's **Download ZIP** button downloads source code, which is different from the installable plugin ZIP linked above.
 
 If you installed the earlier **Legion Remote** build, stop its remote input service and uninstall it through Decky before installing **Decky Remote**. The renamed package uses a different plugin folder; leaving the old copy enabled can occupy the same network port.
 
-To upgrade **Decky Remote 0.1.0**, stop remote input, install the 0.1.1 ZIP over the existing plugin, enable input again, reload the laptop's controller page and pair with the new code. The existing published 0.1.0 release retains its original behavior.
+To upgrade **Decky Remote 0.1.0 or 0.1.1**, stop remote input, install the 0.1.2 ZIP over the existing plugin, enable input again, reload the laptop's controller page and pair with the new code. Horizontal scrolling needs both the updated backend and a reloaded laptop page.
 
-1. Transfer `release/decky-remote-0.1.1.zip` to the handheld using a USB drive or your usual file-transfer tool.
+1. Transfer `release/decky-remote-0.1.2.zip` to the handheld using a USB drive or your usual file-transfer tool.
 2. In Decky's settings, enable Developer mode and select **Install Plugin from ZIP File**. Choose this ZIP. Menu wording may differ by Decky version. The ZIP's root folder is `decky-remote/`; it is a separate installation from Legion Library.
 3. Connect the laptop and handheld to the same trusted private Wi-Fi or LAN.
 4. Open **Decky → Decky Remote → Enable remote input** on the Legion.
@@ -32,6 +32,7 @@ Nothing needs to be installed on the laptop. The laptop never needs your Steam p
 
 ## Input and connection limits
 
+- Vertical and horizontal trackpad scrolling are forwarded as mouse-wheel input. The selected handheld app must support the requested direction; scrolling does not emulate touchscreen swipes.
 - Keyboard keys include letters, digits, modifiers, arrows, navigation, F1–F12 and the numeric keypad. SteamOS interprets key positions according to its configured keyboard layout. Browser/Windows shortcuts can be intercepted before the page receives them.
 - **Send text** supports 1–128 ASCII characters plus tabs and newlines. It simulates US English key positions; set the handheld to a US English keyboard layout and turn Caps Lock off for accurate text. Unicode, IME input and clipboard synchronization are not included.
 - **Start control** requests mouse capture and enables keyboard input together. The browser routes movement, physical clicks, button holds and scrolling to the handheld until you press Escape, pause, switch windows, or lose the connection. Chrome/Edge desktop browsers are the intended starting point; if capture is blocked or unavailable, select the explicit touchpad fallback.
@@ -50,6 +51,11 @@ The laptop page and input API are served over **unencrypted HTTP** on the handhe
 Pairing uses a random single-use eight-digit code and a random 256-bit session token kept in browser memory. Tokens are also bound to the laptop's source IP. Pairing is limited to five attempts per minute across all clients. Exact Host/Origin checks, JSON-only POST requests, blocked cross-site requests and a restrictive content security policy reduce browser-based misuse. The API accepts only validated, size-limited input events and text; it has no file access or command execution endpoint. HTTP requests have a five-second deadline and connections are capped at sixteen.
 
 The device controls when the service runs. Uninstall through Decky's plugin settings to remove it. No persistent input service, background laptop helper or system configuration needs to be undone.
+
+## Changes in 0.1.2
+
+- Two-finger horizontal scrolling now reaches the handheld in Full control and Touchpad modes. Diagonal gestures send both axes, with the same sensitivity as vertical scrolling.
+- Partial scroll gestures reset when control pauses.
 
 ## Changes in 0.1.1
 
