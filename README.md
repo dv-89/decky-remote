@@ -106,6 +106,29 @@ This plugin has its own manifest, source, backend and package. The archive inclu
 
 For a laptop-only browser demo, run `python scripts/preview.py` and open `http://127.0.0.1:8766`. The initial demo code is `12345678`. All input is discarded; this does not connect to or control the handheld or laptop. After disconnecting, restart the demo for the initial code. Ctrl+C stops it.
 
+## Automated releases
+
+[Build and release workflow](https://github.com/dv-89/decky-remote/actions/workflows/release.yml) runs the tests, builds the plugin, verifies its ZIP and checksum, then publishes release assets when requested. GitHub's built-in token handles publishing; no personal access token or extra secret is needed.
+
+For a release from GitHub's website:
+
+1. Update the version in `package.json` and both root version fields in `package-lock.json` (or use `npm version 0.1.5 --no-git-tag-version`). Commit and push the changes, along with any new code and release documentation.
+2. Open **Actions → Build and release → Run workflow**, choose the branch, leave **Publish the package version as a GitHub release** checked, and run it. The workflow creates the matching version tag if needed and publishes the ZIP and `.sha256` after all checks pass. Uncheck Publish to test the build without releasing.
+3. Open the new release and copy the link to `decky-remote-<version>.zip` for Decky's URL installer. It uses `/releases/download/v<version>/decky-remote-<version>.zip`.
+
+Alternatively, after committing the new version, push a matching tag:
+
+```powershell
+git tag v0.1.5
+git push origin v0.1.5
+```
+
+Tag pushes publish automatically. Regular pushes to `main` and pull requests only validate/build and save downloadable workflow artifacts. `0.x` versions and versions containing a prerelease suffix are marked **Pre-release**; stable `1.x` and later versions are published as regular releases. Titles and change notes are generated automatically.
+
+Existing releases are never overwritten. A manual run also refuses to reuse a tag pointing at a different commit; select that tag in Run workflow or bump the version for new code. If uploading fails after creating a draft, the release stays a draft: inspect it in Releases and remove that incomplete draft before retrying (keep a matching tag pointing at the intended commit).
+
+This automates publishing on GitHub. Decky Remote still needs manual installation of each update through Decky; this workflow does not add an in-plugin updater.
+
 ## References
 
 The backend follows the [Linux uinput interface](https://docs.kernel.org/input/uinput.html) and [uinput ABI](https://github.com/torvalds/linux/blob/master/include/uapi/linux/uinput.h). The plugin lifecycle and build conventions follow [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and the [official plugin template](https://github.com/SteamDeckHomebrew/decky-plugin-template). Own code is MIT; see LICENSE and THIRD_PARTY_NOTICES.md for included dependencies.
