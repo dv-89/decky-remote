@@ -3,6 +3,7 @@ const el = id => document.getElementById(id);
 const pad = el("pad");
 let token = "", active = false, events = [], flushing = false, pairing = false;
 let serial = Promise.resolve(), drag = null, wheel = 0;
+let lockPending = false, lockTimer = null, captureRequest = 0;
 const supported = new Set([
   ...Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ", letter => "Key" + letter),
   ...Array.from("0123456789", digit => "Digit" + digit),
@@ -17,16 +18,62 @@ const supported = new Set([
 ]);
 
 function status(message, error = false) { el("status").textContent = message; el("status").classList.toggle("error", error); }
+function fullControl() { return active && document.pointerLockElement === pad; }
+function renderCapture() {
+  pad.classList.toggle("active", active);
+  el("capture").textContent = lockPending ? "Cancel control" : active ? "Pause control" : "Start control";
+  el("mode").disabled = active || lockPending;
+  el("captureHint").textContent = lockPending ? "Waiting for mouse capture. Escape or Cancel control stops the request." : fullControl() ? "Control is active: move, click, drag, scroll and type normally. Press Escape to return to your laptop." : el("mode").value === "touchpad" ? "Touchpad mode: drag in the pad to move, use the click buttons, and type while the pad has focus." : "Start control captures your mouse and keyboard. Press Escape to return to your laptop.";
+  el("padTitle").textContent = fullControl() ? "You’re controlling the handheld" : "Ready to control";
+  el("padHint").textContent = fullControl() ? "Move · Click · Drag · Scroll · Type — Escape to pause" : "Start control, or choose Touchpad mode for manual controls";
+}
 function setCapture(value) {
   active = value && !!token;
-  pad.classList.toggle("active", active);
-  el("capture").textContent = active ? "Pause control" : "Start control";
-  el("captureHint").textContent = active ? "Keys go to the handheld while the pad has focus. Escape pauses control." : "Start control to send keys. Drag inside the pad to move the cursor.";
+  lockPending = false;
+  clearTimeout(lockTimer);
+  lockTimer = null;
   if (active) pad.focus();
   else {
+    captureRequest++;
     drag = null;
+    wheel = 0;
     events = token ? [{type:"release"}] : [];
     if (document.pointerLockElement === pad) document.exitPointerLock();
+  }
+  renderCapture();
+}
+function lockFailed() {
+  if (!lockPending) return;
+  setCapture(false);
+  status("The browser could not capture your mouse. Choose Touchpad mode, or try Start control again.", true);
+}
+function pauseControl() {
+  setCapture(false);
+  status("Control paused. Start control to resume.");
+}
+function captureReady() {
+  setCapture(true);
+  status("Mouse and keyboard control is active. Press Escape to return to your laptop.");
+}
+async function startControl() {
+  if (!token || active || lockPending) return;
+  if (el("mode").value === "touchpad") { setCapture(true); status("Touchpad control is active. Escape pauses it."); return; }
+  const request = ++captureRequest;
+  lockPending = true;
+  renderCapture();
+  lockTimer = setTimeout(lockFailed, 2000);
+  try {
+    // Call immediately from the click gesture. Legacy browsers return undefined
+    // and report the result only through pointerlockchange/pointerlockerror.
+    const result = pad.requestPointerLock();
+    await result;
+    if (request !== captureRequest || !token || document.hidden) {
+      if (document.pointerLockElement === pad) document.exitPointerLock();
+      return;
+    }
+    if (lockPending && document.pointerLockElement === pad) captureReady();
+  } catch {
+    if (request === captureRequest) lockFailed();
   }
 }
 function ended(message) {
@@ -102,17 +149,22 @@ el("pairForm").addEventListener("submit", async event => {
 });
 // Preserve pad focus until click, so the blur handler cannot reverse Pause.
 el("capture").addEventListener("pointerdown", event => event.preventDefault());
-el("capture").addEventListener("click", () => setCapture(!active));
-pad.addEventListener("click", () => { if (!active && token) setCapture(true); });
-for (const kind of ["keydown", "keyup"]) pad.addEventListener(kind, event => {
+el("capture").addEventListener("click", () => {
+  if (active || lockPending) pauseControl();
+  else void startControl();
+});
+el("mode").addEventListener("change", pauseControl);
+pad.addEventListener("click", () => { if (!active && !lockPending) void startControl(); });
+for (const kind of ["keydown", "keyup"]) document.addEventListener(kind, event => {
+  if (event.code === "Escape" && (active || lockPending)) { event.preventDefault(); pauseControl(); return; }
   if (!active || event.isComposing) return;
-  if (event.code === "Escape") { event.preventDefault(); setCapture(false); return; }
+  if (!fullControl() && (el("mode").value !== "touchpad" || document.activeElement !== pad)) return;
   if (!supported.has(event.code)) return;
   event.preventDefault();
   queue({type:"key", code:event.code, value:kind === "keyup" ? 0 : event.repeat ? 2 : 1});
 });
-pad.addEventListener("blur", () => setCapture(false));
-window.addEventListener("blur", () => setCapture(false));
+pad.addEventListener("blur", () => { if (active && el("mode").value === "touchpad") pauseControl(); });
+window.addEventListener("blur", () => { if (active || lockPending) pauseControl(); else setCapture(false); });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && token) {
     setCapture(false);
@@ -125,55 +177,61 @@ window.addEventListener("pagehide", () => {
 });
 
 const buttonName = index => ["left", "middle", "right"][index];
+// Mouse events report every button transition, including multiple held buttons.
+// Pointer events alone omit pointerdown/up for some mouse button chords.
+for (const kind of ["mousedown", "mouseup"]) document.addEventListener(kind, event => {
+  if (!fullControl()) return;
+  event.preventDefault();
+  const button = buttonName(event.button);
+  if (button) queue({type:"button", button, value:kind === "mousedown" ? 1 : 0});
+});
+function move(dx, dy) {
+  dx = Math.max(-1000, Math.min(1000, Math.round(dx)));
+  dy = Math.max(-1000, Math.min(1000, Math.round(dy)));
+  if (dx || dy) queue({type:"move", dx, dy});
+}
+document.addEventListener("mousemove", event => { if (fullControl()) move(event.movementX, event.movementY); });
 pad.addEventListener("pointerdown", event => {
-  if (!token) return;
+  if (!token || el("mode").value !== "touchpad") return;
   setCapture(true);
-  if (document.pointerLockElement === pad) {
-    const button = buttonName(event.button);
-    if (button) queue({type:"button", button, value:1});
-  } else if (event.button === 0) {
+  if (event.button === 0) {
     drag = {id:event.pointerId, x:event.clientX, y:event.clientY};
     pad.setPointerCapture(event.pointerId);
   }
   event.preventDefault();
 });
 pad.addEventListener("pointermove", event => {
-  if (!active) return;
-  let dx = 0, dy = 0;
-  if (document.pointerLockElement === pad) { dx = event.movementX; dy = event.movementY; }
-  else if (drag?.id === event.pointerId) {
-    dx = event.clientX - drag.x; dy = event.clientY - drag.y;
+  if (!active || el("mode").value !== "touchpad") return;
+  if (drag?.id === event.pointerId) {
+    move(event.clientX - drag.x, event.clientY - drag.y);
     drag.x = event.clientX; drag.y = event.clientY;
   }
-  dx = Math.max(-1000, Math.min(1000, Math.round(dx)));
-  dy = Math.max(-1000, Math.min(1000, Math.round(dy)));
-  if (dx || dy) queue({type:"move", dx, dy});
 });
 pad.addEventListener("pointerup", event => {
-  if (document.pointerLockElement === pad) {
-    const button = buttonName(event.button);
-    if (button) queue({type:"button", button, value:0});
-  }
   if (drag?.id === event.pointerId) drag = null;
 });
 pad.addEventListener("pointercancel", () => setCapture(false));
 pad.addEventListener("contextmenu", event => { if (active) event.preventDefault(); });
-pad.addEventListener("wheel", event => {
-  if (!active) return;
+document.addEventListener("contextmenu", event => { if (fullControl()) event.preventDefault(); });
+document.addEventListener("auxclick", event => { if (fullControl()) event.preventDefault(); });
+function scroll(event) {
   event.preventDefault();
   wheel += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 200 : 1);
   const steps = Math.max(-10, Math.min(10, Math.trunc(wheel / 80)));
   if (steps) { queue({type:"wheel", delta:-steps}); wheel -= steps * 80; }
-}, {passive:false});
-el("mouseLock").addEventListener("click", async () => {
-  setCapture(true);
-  try { await pad.requestPointerLock(); }
-  catch { status("Mouse capture is unavailable. Drag in the pad and use the click buttons.", true); }
-});
+}
+document.addEventListener("wheel", event => { if (fullControl()) scroll(event); }, {passive:false});
+pad.addEventListener("wheel", event => { if (active && el("mode").value === "touchpad") scroll(event); }, {passive:false});
 document.addEventListener("pointerlockchange", () => {
-  if (document.pointerLockElement !== pad) setCapture(false);
+  if (document.pointerLockElement === pad) {
+    if (lockPending && token && !document.hidden) {
+      captureReady();
+    } else if (!active || el("mode").value === "touchpad") document.exitPointerLock();
+  } else if (active && el("mode").value !== "touchpad") {
+    pauseControl();
+  }
 });
-document.addEventListener("pointerlockerror", () => status("Mouse capture is unavailable. Use the touchpad and click buttons.", true));
+document.addEventListener("pointerlockerror", lockFailed);
 for (const button of document.querySelectorAll("[data-click]")) button.addEventListener("click", () => {
   queue({type:"button", button:button.dataset.click, value:1});
   queue({type:"button", button:button.dataset.click, value:0});

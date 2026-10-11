@@ -15,12 +15,13 @@
     </section>
     <div id="controller" hidden>
       <section class="card">
-        <div class="row spread"><h2>Keyboard & touchpad</h2><button id="capture">Start control</button></div>
-        <p id="captureHint">Start control to send keys. Drag inside the pad to move the cursor. Your laptop’s screen stays local.</p>
-        <div id="pad" tabindex="0" role="application" aria-label="Remote keyboard and touchpad. Escape pauses control."><span>Click here to focus<br><small>Drag to move · Scroll to scroll · Escape to pause</small></span></div>
-        <div class="row actions"><button data-click="left">Left click</button><button data-click="right">Right click</button><button data-click="middle">Middle click</button><button id="mouseLock">Capture mouse</button></div>
+        <div class="row spread"><h2>Keyboard & mouse</h2><button id="capture">Start control</button></div>
+        <label for="mode">Control mode</label><select id="mode"><option value="mouse">Full control — mouse & keyboard</option><option value="touchpad">Touchpad — manual fallback</option></select>
+        <p id="captureHint">Start control captures your mouse and keyboard. Press Escape to return to your laptop.</p>
+        <div id="pad" tabindex="0" role="application" aria-label="Remote keyboard and mouse. Escape pauses control."><span id="padTitle">Ready to control</span><small id="padHint">Start control, or choose Touchpad mode for manual controls</small></div>
+        <div class="row actions"><button data-click="left">Left click</button><button data-click="right">Right click</button><button data-click="middle">Middle click</button></div>
         <div class="row actions"><button data-key="Enter">Enter</button><button data-key="Escape">Escape</button><button data-key="Backspace">Backspace</button><button data-key="Tab">Tab</button><button data-key="ArrowUp">↑</button><button data-key="ArrowLeft">←</button><button data-key="ArrowDown">↓</button><button data-key="ArrowRight">→</button><button id="showDesktop">Super + D</button></div>
-        <p class="small">Capture mouse sends movement and physical clicks until Escape. Browser and Windows shortcuts may stay on your laptop. “Super + D” works only where SteamOS assigns that shortcut.</p>
+        <p class="small">Full control sends physical mouse clicks, dragging, scrolling and keys while this page is active. Escape returns control to your laptop. Browser and Windows shortcuts may stay on your laptop. “Super + D” works only where SteamOS assigns that shortcut.</p>
       </section>
       <section class="card">
         <h2>Send text</h2><label for="text">Select a text field on the handheld first</label><textarea id="text" rows="3" maxlength="128" placeholder="Type here, then send to the handheld…"></textarea>

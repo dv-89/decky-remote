@@ -1,4 +1,4 @@
-# Decky Remote 0.1.0
+# Decky Remote 0.1.1
 
 A separate Decky plugin that turns a laptop browser into a keyboard and mouse for a Legion Go S running SteamOS. Both devices connect to the same trusted private LAN. Look at the handheld's screen while controlling it; this version sends input only.
 
@@ -6,24 +6,26 @@ A separate Decky plugin that turns a laptop browser into a keyboard and mouse fo
 
 ## Install and connect
 
-[Download the installable ZIP](https://github.com/dv-89/decky-remote/raw/refs/heads/main/release/decky-remote-0.1.0.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
+[Download the installable ZIP](https://github.com/dv-89/decky-remote/raw/refs/heads/main/release/decky-remote-0.1.1.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
 
 ```text
-https://raw.githubusercontent.com/dv-89/decky-remote/main/release/decky-remote-0.1.0.zip
+https://raw.githubusercontent.com/dv-89/decky-remote/main/release/decky-remote-0.1.1.zip
 ```
 
 GitHub's **Download ZIP** button downloads source code, which is different from the installable plugin ZIP linked above.
 
 If you installed the earlier **Legion Remote** build, stop its remote input service and uninstall it through Decky before installing **Decky Remote**. The renamed package uses a different plugin folder; leaving the old copy enabled can occupy the same network port.
 
-1. Transfer `release/decky-remote-0.1.0.zip` to the handheld using a USB drive or your usual file-transfer tool.
+To upgrade **Decky Remote 0.1.0**, stop remote input, install the 0.1.1 ZIP over the existing plugin, enable input again, reload the laptop's controller page and pair with the new code. The existing published 0.1.0 release retains its original behavior.
+
+1. Transfer `release/decky-remote-0.1.1.zip` to the handheld using a USB drive or your usual file-transfer tool.
 2. In Decky's settings, enable Developer mode and select **Install Plugin from ZIP File**. Choose this ZIP. Menu wording may differ by Decky version. The ZIP's root folder is `decky-remote/`; it is a separate installation from Legion Library.
 3. Connect the laptop and handheld to the same trusted private Wi-Fi or LAN.
 4. Open **Decky → Decky Remote → Enable remote input** on the Legion.
 5. Type the displayed address (for example, `http://192.168.1.42:8765`) into the laptop's browser. Use the full numeric address, including `http://` and the port.
 6. Enter the eight-digit code shown in Decky, preserving any leading zeroes. One laptop can pair at a time.
-7. Select a text field on the handheld. On the laptop, use **Send text**, or choose **Start control** and type while the touchpad area has focus.
-8. Drag in the pad to move the mouse, scroll over it, and use the click buttons. **Capture mouse** optionally sends relative mouse movement and physical mouse clicks while the pointer is locked to the pad. Press Escape to pause; use the **Escape** button to send Escape to the handheld.
+7. Leave **Full control — mouse & keyboard** selected and click **Start control**. Your laptop cursor disappears while the browser captures it. Move the mouse freely, click your physical left/right/middle buttons, hold buttons to drag, scroll and type to control the handheld. You do not need to hold down the pad or use the click buttons.
+8. Press **Escape** to return the cursor and control to your laptop. If the browser refuses mouse capture, choose **Touchpad — manual fallback**: drag in the pad, use the click buttons and type with the pad focused. Use the separate **Escape** button to send Escape to the handheld. **Send text** remains available while paused; select a field on the handheld first.
 9. Use **Stop remote input** in Decky when finished. **Disconnect laptop** revokes its session and creates a new pairing code while leaving the listener enabled.
 
 Nothing needs to be installed on the laptop. The laptop never needs your Steam password. No input or pairing credentials are saved to disk. The plugin always starts disabled after a restart, reload or reinstall.
@@ -32,7 +34,8 @@ Nothing needs to be installed on the laptop. The laptop never needs your Steam p
 
 - Keyboard keys include letters, digits, modifiers, arrows, navigation, F1–F12 and the numeric keypad. SteamOS interprets key positions according to its configured keyboard layout. Browser/Windows shortcuts can be intercepted before the page receives them.
 - **Send text** supports 1–128 ASCII characters plus tabs and newlines. It simulates US English key positions; set the handheld to a US English keyboard layout and turn Caps Lock off for accurate text. Unicode, IME input and clipboard synchronization are not included.
-- Touchpad mode moves the cursor and provides separate click buttons. Capture mouse supports holding mouse buttons for dragging. The browser must keep the controller page active for continuous control.
+- **Start control** requests mouse capture and enables keyboard input together. The browser routes movement, physical clicks, button holds and scrolling to the handheld until you press Escape, pause, switch windows, or lose the connection. Chrome/Edge desktop browsers are the intended starting point; if capture is blocked or unavailable, select the explicit touchpad fallback.
+- Input capture requires the controller page to stay active. A website cannot capture input across other laptop applications or guarantee forwarding Windows/browser shortcuts; that would require a native laptop companion app. The laptop's screen remains local.
 - Switching windows, pausing control, or losing pad focus releases held keys/buttons. A handheld watchdog revokes the session and releases inputs after three seconds without valid traffic. Browser background throttling or device sleep can end a session; pair again using the new code. Sessions expire after one hour even with heartbeats.
 - The server listens on IPv4 TCP port 8765 and accepts only RFC1918 private or loopback source addresses. Use the numeric address shown by Decky. IPv6-only networks, DNS names, remote internet control and Bluetooth/USB control are not implemented.
 - Guest Wi-Fi may isolate clients. If the page is unreachable, check that both devices are on the same LAN, that Wi-Fi client isolation is off, and that the handheld's firewall permits inbound TCP 8765. The plugin does not change firewall/router settings. Stop and enable again after switching networks to refresh the addresses.
@@ -47,6 +50,12 @@ The laptop page and input API are served over **unencrypted HTTP** on the handhe
 Pairing uses a random single-use eight-digit code and a random 256-bit session token kept in browser memory. Tokens are also bound to the laptop's source IP. Pairing is limited to five attempts per minute across all clients. Exact Host/Origin checks, JSON-only POST requests, blocked cross-site requests and a restrictive content security policy reduce browser-based misuse. The API accepts only validated, size-limited input events and text; it has no file access or command execution endpoint. HTTP requests have a five-second deadline and connections are capped at sixteen.
 
 The device controls when the service runs. Uninstall through Decky's plugin settings to remove it. No persistent input service, background laptop helper or system configuration needs to be undone.
+
+## Changes in 0.1.1
+
+- **Start control** now captures mouse and keyboard in one action, replacing the separate mouse-capture step.
+- Physical clicks, dragging, scrolling and simultaneous mouse-button holds work in full control mode without the pad or click buttons.
+- Touchpad mode is an explicit fallback. Capture denial, cancellation and late browser responses leave input paused; Escape, focus loss and session termination release held input.
 
 ## Build
 
