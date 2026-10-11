@@ -3,14 +3,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-function harness({pointerLock="promise"}={}) {
+function harness({pointerLock="promise", mode="mouse", coarse=false}={}) {
   let doc, completeRequest;
+  let now=10000;
   let lockRequests=0;
   class Element {
     constructor(id) { this.id=id; this.handlers={}; this.value=""; this.hidden=false; this.dataset={}; this.classes=new Set(); this.classList={toggle:(name,on)=>on ? this.classes.add(name) : this.classes.delete(name)}; }
     addEventListener(kind, callback) { (this.handlers[kind] ??= []).push(callback); }
     async emit(kind, data={}) { for (const callback of this.handlers[kind] ?? []) await callback({preventDefault(){},...data}); }
     focus() { doc.activeElement=this; }
+    contains(target) { return target===this; }
+    setAttribute(name,value) { this[name]=value; }
     setPointerCapture() {}
     requestPointerLock() {
       lockRequests++;
@@ -22,9 +25,9 @@ function harness({pointerLock="promise"}={}) {
       return pointerLock==="legacy" ? undefined : notification;
     }
   }
-  const ids=["pad","padTitle","padHint","mode","status","capture","captureHint","controller","pairPanel","pin","pairButton","pairForm","showDesktop","text","sendText","disconnect"];
+  const ids=["pad","padTitle","padHint","mode","status","capture","captureHint","controller","pairPanel","pin","pairButton","pairForm","showDesktop","text","sendText","disconnect","remoteTab","textTab","remotePane","textPane"];
   const elements=Object.fromEntries(ids.map(id=>[id,new Element(id)]));
-  elements.mode.value="mouse";
+  elements.mode.value=mode;
   if(pointerLock==="unsupported")elements.pad.requestPointerLock=undefined;
   const left=new Element("left"); left.dataset.click="left";
   const enter=new Element("enter"); enter.dataset.key="Enter";
@@ -33,14 +36,16 @@ function harness({pointerLock="promise"}={}) {
   doc.querySelectorAll=selector=>selector==="[data-click]" ? [left] : [enter];
   doc.exitPointerLock=()=>{doc.pointerLockElement=null;void doc.emit("pointerlockchange");}; doc.pointerLockElement=null; doc.hidden=false;
   const window=new Element("window");
+  window.matchMedia=()=>({matches:coarse});
   const intervals=[], calls=[];
   let reject=false;
-  const context=vm.createContext({document:doc,window,AbortController,console,setTimeout,clearTimeout, setInterval:fn=>intervals.push(fn),fetch:async(path,opts)=>{
+  const context=vm.createContext({document:doc,window,Date:{now:()=>now},AbortController,console,setTimeout,clearTimeout, setInterval:fn=>intervals.push(fn),fetch:async(path,opts)=>{
     calls.push({path,data:JSON.parse(opts.body),headers:opts.headers});
     return {ok:!reject,status:reject?401:200,json:async()=>reject?{error:"Session ended"}:path==="/api/pair"?{token:"test-token"}:{ok:true}};
   }});
   vm.runInContext(readFileSync(new URL("../web/client.js",import.meta.url),"utf8"),context);
   return {elements,left,enter,doc,window,intervals,calls, reject:()=>{reject=true;},
+    advance(ms){now+=ms;},
     get lockRequests(){return lockRequests;},
     async completeLock(){doc.pointerLockElement=elements.pad;await doc.emit("pointerlockchange");completeRequest?.();await new Promise(resolve=>setTimeout(resolve,0));},
     async pair(){elements.pin.value="00123456";await elements.pairForm.emit("submit");},
@@ -75,7 +80,7 @@ test("Escape and loss of window focus discard pending presses and release input"
     const h=harness(); await h.pair();await h.elements.capture.emit("click");
     await h.doc.emit("keydown",{code:"KeyA",repeat:false});
     await h.doc.emit("mousedown",{button:0});
-    if(action==="escape")await h.doc.emit("keydown",{code:"Escape"});
+    if(action==="escape")for(let i=0;i<3;i++)await h.doc.emit("keydown",{code:"Escape"});
     if(action==="blur")await h.window.emit("blur");
     if(action==="hidden"){h.doc.hidden=true;await h.doc.emit("visibilitychange");}
     if(action==="unlock"){h.doc.pointerLockElement=null;await h.doc.emit("pointerlockchange");}
@@ -85,6 +90,46 @@ test("Escape and loss of window focus discard pending presses and release input"
     assert.equal(h.doc.pointerLockElement,null);
     assert.equal(h.elements.mode.disabled,false);
   }
+});
+
+test("single Escape is Steam back, repeats are ignored, and three quick presses pause",async()=>{
+  for(const mode of ["window","touchpad"]){
+    const h=harness({mode});await h.pair();await h.elements.capture.emit("click");
+    assert.equal(h.lockRequests,0);
+    await h.doc.emit("keydown",{code:"Escape",repeat:false});
+    await h.doc.emit("keydown",{code:"Escape",repeat:true});
+    await h.doc.emit("keyup",{code:"Escape"});await h.flush();
+    assert.deepEqual(h.calls.at(-1).data.events,[{type:"key",code:"Escape",value:1},{type:"key",code:"Escape",value:0}]);
+    assert.equal(h.elements.capture.textContent,"Pause control");
+    h.advance(100);await h.doc.emit("keydown",{code:"Escape"});await h.flush();
+    assert.equal(h.elements.capture.textContent,"Pause control");
+    h.advance(100);await h.doc.emit("keydown",{code:"Escape"});await h.flush();
+    assert.equal(h.elements.capture.textContent,"Start control");
+    assert.deepEqual(h.calls.at(-1).data.events,[{type:"release"}]);
+  }
+});
+
+test("spaced Escape presses do not pause and default pad mode sends free movement and clicks",async()=>{
+  const h=harness({mode:"window"});await h.pair();await h.elements.capture.emit("click");
+  for(let i=0;i<4;i++){await h.doc.emit("keydown",{code:"Escape"});await h.flush();h.advance(1000);}
+  assert.equal(h.elements.capture.textContent,"Pause control");
+  await h.elements.pad.emit("mousemove",{movementX:12,movementY:-3});
+  await h.doc.emit("mousedown",{button:0,target:h.elements.pad});
+  await h.doc.emit("mouseup",{button:0,target:h.elements.pad});await h.flush();
+  assert.deepEqual(h.calls.at(-1).data.events,[{type:"move",dx:12,dy:-3},{type:"button",button:"left",value:1},{type:"button",button:"left",value:0}]);
+  await h.elements.pad.emit("mouseleave");await h.flush();
+  assert.deepEqual(h.calls.at(-1).data.events,[{type:"release"}]);
+});
+
+test("mobile chooses touchpad and changing tools pauses input before text entry",async()=>{
+  const h=harness({mode:"window",coarse:true});await h.pair();
+  assert.equal(h.elements.mode.value,"touchpad");await h.elements.capture.emit("click");
+  await h.doc.emit("keydown",{code:"KeyW"});await h.elements.textTab.emit("click");await h.flush();
+  assert.deepEqual(h.calls.at(-1).data.events,[{type:"release"}]);
+  assert.equal(h.elements.remotePane.hidden,true);assert.equal(h.elements.textPane.hidden,false);
+  assert.equal(h.elements.textTab["aria-selected"],"true");
+  const count=h.calls.length;await h.doc.emit("keydown",{code:"KeyA"});await h.flush();assert.equal(h.calls.length,count);
+  await h.elements.remoteTab.emit("click");assert.equal(h.elements.textPane.hidden,true);
 });
 
 test("horizontal and diagonal scrolling forwards both axes in full control and touchpad modes",async()=>{

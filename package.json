@@ -1,6 +1,6 @@
 {
   "name": "decky-remote",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Laptop keyboard and mouse for SteamOS through a paired local browser",
   "type": "module",
   "license": "MIT",

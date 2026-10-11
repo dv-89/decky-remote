@@ -252,7 +252,7 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code,403)
         code,_,_ = await self.request(extra=f"Host: {self.host}\r\n")
         self.assertEqual(code,400)
-        for path in ("/../main.py","/api/status","/favicon.ico"):
+        for path in ("/../main.py","/api/status","/api/files","/api/copy","/favicon.ico"):
             code,_,_ = await self.request(path)
             self.assertEqual(code,404)
         self.assertFalse(self.server.token)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ButtonItem, PanelSection, PanelSectionRow, staticClasses } from "@decky/ui";
-import { callable, definePlugin } from "@decky/api";
+import { ButtonItem, Navigation, PanelSection, PanelSectionRow, staticClasses } from "@decky/ui";
+import { callable, definePlugin, routerHook } from "@decky/api";
+import FileBrowser from "./FileBrowser";
 
 type Status = { enabled: boolean; paired: boolean; pin: string; client: string; urls: string[]; error: string };
 const getStatus = callable<[], Status>("get_status");
@@ -49,13 +50,17 @@ function RemotePanel() {
     </ButtonItem></PanelSectionRow>
     {status?.enabled && status.paired && <PanelSectionRow><ButtonItem layout="below" disabled={busy} onClick={() => { void run(disconnect); }}>Disconnect laptop</ButtonItem></PanelSectionRow>}
     <PanelSectionRow><div style={{ fontSize: 12, lineHeight: 1.5, color: "#b8c2ce" }}>Control is off after every plugin restart. Only one laptop can pair. This local HTTP connection is unencrypted; use trusted Wi-Fi and stop it when finished.</div></PanelSectionRow>
+    <PanelSectionRow><ButtonItem layout="below" onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/decky-remote/files"); }}>Open file browser</ButtonItem></PanelSectionRow>
   </PanelSection>;
 }
 
-export default definePlugin(() => ({
-  name: "Decky Remote",
-  titleView: <div className={staticClasses.Title}>Decky Remote</div>,
-  icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="15" height="11" rx="2"/><path d="M1 19h17m3-10v10m-2-2 2 2 2-2"/></svg>,
-  content: <RemotePanel />,
-  onDismount() {},
-}));
+export default definePlugin(() => {
+  routerHook.addRoute("/decky-remote/files", FileBrowser);
+  return {
+    name: "Decky Remote",
+    titleView: <div className={staticClasses.Title}>Decky Remote</div>,
+    icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="15" height="11" rx="2"/><path d="M1 19h17m3-10v10m-2-2 2 2 2-2"/></svg>,
+    content: <RemotePanel />,
+    onDismount() { routerHook.removeRoute("/decky-remote/files"); },
+  };
+});

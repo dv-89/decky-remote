@@ -4,6 +4,8 @@ const pad = el("pad");
 let token = "", active = false, events = [], flushing = false, pairing = false;
 let serial = Promise.resolve(), drag = null, wheel = 0, wheelX = 0;
 let lockPending = false, lockTimer = null, captureRequest = 0;
+let escapeCount = 0, escapeAt = 0;
+if (window.matchMedia?.("(pointer: coarse)").matches) el("mode").value = "touchpad";
 const supported = new Set([
   ...Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ", letter => "Key" + letter),
   ...Array.from("0123456789", digit => "Digit" + digit),
@@ -19,13 +21,15 @@ const supported = new Set([
 
 function status(message, error = false) { el("status").textContent = message; el("status").classList.toggle("error", error); }
 function fullControl() { return active && document.pointerLockElement === pad; }
+function windowControl() { return active && el("mode").value === "window"; }
+function keyboardControl() { return fullControl() || (active && document.activeElement === pad); }
 function renderCapture() {
   pad.classList.toggle("active", active);
   el("capture").textContent = lockPending ? "Cancel control" : active ? "Pause control" : "Start control";
   el("mode").disabled = active || lockPending;
-  el("captureHint").textContent = lockPending ? "Waiting for mouse capture. Escape or Cancel control stops the request." : fullControl() ? "Control is active: move, click, drag, scroll and type normally. Press Escape to return to your laptop." : el("mode").value === "touchpad" ? "Touchpad mode: drag in the pad to move, use the click buttons, and type while the pad has focus." : "Start control captures your mouse and keyboard. Press Escape to return to your laptop.";
-  el("padTitle").textContent = fullControl() ? "You’re controlling the handheld" : "Ready to control";
-  el("padHint").textContent = fullControl() ? "Move · Click · Drag · Scroll · Type — Escape to pause" : "Start control, or choose Touchpad mode for manual controls";
+  el("captureHint").textContent = lockPending ? "Waiting for mouse capture. Escape or Cancel control stops the request." : el("mode").value === "mouse" ? "Unlimited capture: move and click freely. The browser reserves Escape to unlock. Use the Back button to send Escape to Steam." : el("mode").value === "touchpad" ? "Drag the pad to move. Single Escape goes back in Steam; press Escape three times quickly to pause." : "Move and click inside the pad without holding a button. Single Escape goes back in Steam; press it three times quickly to pause.";
+  el("padTitle").textContent = active ? "You’re controlling the handheld" : "Ready to control";
+  el("padHint").textContent = active ? (fullControl() ? "Move · Click · Drag · Scroll · Type" : "Back: Escape · Pause: Escape × 3") : "Press Start control to begin";
 }
 function setCapture(value) {
   active = value && !!token;
@@ -37,6 +41,7 @@ function setCapture(value) {
     captureRequest++;
     drag = null;
     wheel = wheelX = 0;
+    escapeCount = escapeAt = 0;
     events = token ? [{type:"release"}] : [];
     if (document.pointerLockElement === pad) document.exitPointerLock();
   }
@@ -53,11 +58,11 @@ function pauseControl() {
 }
 function captureReady() {
   setCapture(true);
-  status("Mouse and keyboard control is active. Press Escape to return to your laptop.");
+  status("Mouse capture is active. The browser uses Escape to unlock.");
 }
 async function startControl() {
   if (!token || active || lockPending) return;
-  if (el("mode").value === "touchpad") { setCapture(true); status("Touchpad control is active. Escape pauses it."); return; }
+  if (el("mode").value !== "mouse") { setCapture(true); status("Control is active. Escape goes back; Escape × 3 pauses."); return; }
   const request = ++captureRequest;
   lockPending = true;
   renderCapture();
@@ -156,14 +161,28 @@ el("capture").addEventListener("click", () => {
 el("mode").addEventListener("change", pauseControl);
 pad.addEventListener("click", () => { if (!active && !lockPending) void startControl(); });
 for (const kind of ["keydown", "keyup"]) document.addEventListener(kind, event => {
-  if (event.code === "Escape" && (active || lockPending)) { event.preventDefault(); pauseControl(); return; }
+  if (event.code === "Escape" && lockPending) { event.preventDefault(); pauseControl(); return; }
+  if (event.code === "Escape" && keyboardControl()) {
+    event.preventDefault();
+    // The browser may still unlock pointer lock on Escape. The default pad
+    // control mode avoids pointer lock so single Escape can reach Steam.
+    if (kind === "keydown" && !event.repeat) {
+      const now = Date.now();
+      escapeCount = now - escapeAt < 900 ? escapeCount + 1 : 1;
+      escapeAt = now;
+      if (escapeCount === 3) { pauseControl(); return; }
+      queue({type:"key", code:"Escape", value:1});
+      queue({type:"key", code:"Escape", value:0});
+    }
+    return;
+  }
   if (!active || event.isComposing) return;
-  if (!fullControl() && (el("mode").value !== "touchpad" || document.activeElement !== pad)) return;
+  if (!keyboardControl()) return;
   if (!supported.has(event.code)) return;
   event.preventDefault();
   queue({type:"key", code:event.code, value:kind === "keyup" ? 0 : event.repeat ? 2 : 1});
 });
-pad.addEventListener("blur", () => { if (active && el("mode").value === "touchpad") pauseControl(); });
+pad.addEventListener("blur", () => { if (active && !fullControl()) pauseControl(); });
 window.addEventListener("blur", () => { if (active || lockPending) pauseControl(); else setCapture(false); });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && token) {
@@ -180,7 +199,8 @@ const buttonName = index => ["left", "middle", "right"][index];
 // Mouse events report every button transition, including multiple held buttons.
 // Pointer events alone omit pointerdown/up for some mouse button chords.
 for (const kind of ["mousedown", "mouseup"]) document.addEventListener(kind, event => {
-  if (!fullControl()) return;
+  if (!fullControl() && !(windowControl() && (kind === "mouseup" || pad.contains(event.target)))) return;
+  if (windowControl()) pad.focus();
   event.preventDefault();
   const button = buttonName(event.button);
   if (button) queue({type:"button", button, value:kind === "mousedown" ? 1 : 0});
@@ -191,6 +211,8 @@ function move(dx, dy) {
   if (dx || dy) queue({type:"move", dx, dy});
 }
 document.addEventListener("mousemove", event => { if (fullControl()) move(event.movementX, event.movementY); });
+pad.addEventListener("mousemove", event => { if (windowControl()) move(event.movementX, event.movementY); });
+pad.addEventListener("mouseleave", () => { if (windowControl()) pauseControl(); });
 pad.addEventListener("pointerdown", event => {
   if (!token || el("mode").value !== "touchpad") return;
   setCapture(true);
@@ -212,7 +234,7 @@ pad.addEventListener("pointerup", event => {
 });
 pad.addEventListener("pointercancel", () => setCapture(false));
 pad.addEventListener("contextmenu", event => { if (active) event.preventDefault(); });
-document.addEventListener("contextmenu", event => { if (fullControl()) event.preventDefault(); });
+document.addEventListener("contextmenu", event => { if (fullControl() || (windowControl() && pad.contains(event.target))) event.preventDefault(); });
 document.addEventListener("auxclick", event => { if (fullControl()) event.preventDefault(); });
 function scroll(event) {
   event.preventDefault();
@@ -229,13 +251,13 @@ function scroll(event) {
   }
 }
 document.addEventListener("wheel", event => { if (fullControl()) scroll(event); }, {passive:false});
-pad.addEventListener("wheel", event => { if (active && el("mode").value === "touchpad") scroll(event); }, {passive:false});
+pad.addEventListener("wheel", event => { if (active && !fullControl()) scroll(event); }, {passive:false});
 document.addEventListener("pointerlockchange", () => {
   if (document.pointerLockElement === pad) {
     if (lockPending && token && !document.hidden) {
       captureReady();
     } else if (!active || el("mode").value === "touchpad") document.exitPointerLock();
-  } else if (active && el("mode").value !== "touchpad") {
+  } else if (active && el("mode").value === "mouse") {
     pauseControl();
   }
 });
@@ -265,3 +287,11 @@ el("disconnect").addEventListener("click", async () => {
   try { await api("/api/disconnect", {}); } catch {}
   ended("Disconnected. Pair again using the new code in Decky.");
 });
+for (const name of ["remote", "text"]) el(name + "Tab").addEventListener("click", () => {
+  if (active || lockPending) pauseControl();
+  for (const pane of ["remote", "text"]) {
+    el(pane + "Pane").hidden = pane !== name;
+    el(pane + "Tab").setAttribute("aria-selected", String(pane === name));
+  }
+});
+renderCapture();

@@ -5,6 +5,6 @@
   "api_version": 1,
   "publish": {
     "tags": ["utility", "input"],
-    "description": "Use a paired laptop browser as a local keyboard and mouse for SteamOS."
+    "description": "Control SteamOS from a paired browser, and browse or copy files inside Gaming Mode."
   }
 }

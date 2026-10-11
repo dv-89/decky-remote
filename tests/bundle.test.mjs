@@ -4,9 +4,10 @@ import React from "react";
 import * as jsx from "react/jsx-runtime";
 
 test("compiled plugin connects as Decky Remote and exposes its Decky panel",async()=>{
+  const routes=new Map();
   globalThis.window={__DECKY_SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED_deckyLoaderAPIInit:{connect:(version,name)=>{
     assert.equal(version,2);assert.equal(name,"Decky Remote");
-    return {_version:2,callable:method=>async()=>({method})};
+    return {_version:2,callable:method=>async()=>({method}),routerHook:{addRoute:(path,component)=>routes.set(path,component),removeRoute:path=>routes.delete(path)}};
   }}};
   globalThis.SP_REACT=React;globalThis.SP_JSX=jsx;
   globalThis.DFL={ButtonItem:"button",PanelSection:"section",PanelSectionRow:"div",staticClasses:{Title:"title"}};
@@ -15,5 +16,7 @@ test("compiled plugin connects as Decky Remote and exposes its Decky panel",asyn
   assert.equal(plugin.name,"Decky Remote");
   assert.equal(plugin.titleView.props.children,"Decky Remote");
   assert.equal(typeof plugin.content.type,"function");
+  assert.equal(typeof routes.get("/decky-remote/files"),"function");
   plugin.onDismount();
+  assert.equal(routes.size,0);
 });
