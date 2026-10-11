@@ -12,9 +12,15 @@ For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and t
 
 For 0.1.2, TypeScript typecheck, Rollup build and the compiled-plugin check passed. All 16 Python backend/protocol/HTTP checks and 10 browser-client checks passed, including horizontal/diagonal scrolling, pixel/line/page units, fractional deltas, axis limits, pause resets, HTTP delivery and packed Linux horizontal-wheel events. Real horizontal scrolling on the handheld remains pending device validation.
 
+## Version 0.1.4
+
+The custom file browser has been replaced with a fixed Dolphin launch descriptor and a Steam shortcut launcher. Local checks cover installed/missing executables, home validation, creation, reuse after reload, overlapping clicks, account changes, same-name foreign shortcuts, full 64-bit game IDs, settings confirmation, registration cleanup and failed creation. They simulate Steam APIs; they do not establish that SteamOS displays Dolphin correctly. Existing remote-input checks remain applicable. The removed 0.1.3 file-copy tests are historical only.
+
+TypeScript typecheck and Rollup build pass. All 19 Python checks pass in Ubuntu WSL; all 13 controller-client checks, 10 Dolphin-launcher checks and the compiled-plugin check pass in Node. The package is checked for its single plugin folder, current version and source/bundle contents, removed file-browser components, CRC and SHA-256. Dolphin window focus, dialogs, filesystem operations and exit behavior remain pending the on-device checklist below.
+
 ## On the Legion Go S
 
-Version 0.1.3 adds a mobile layout, Escape-friendly pad control and a local Decky file browser. The in-app browser preview verified single Escape keeps Pad control active, three quick presses pause it, and the file-browser selection/destination/copy flow succeeds with fictional data. The mobile Control / Send text layout was checked at 390 and 320 px without horizontal page overflow; [mobile preview](mobile-controller.png) and [Files preview](file-browser.png) are saved. The Files preview uses mock Decky components and cannot establish Steam controller focus or clipboard behavior.
+Version 0.1.3 adds a mobile layout, Escape-friendly pad control and a local Decky file browser. The in-app browser preview verified single Escape keeps Pad control active, three quick presses pause it, and the file-browser selection/destination/copy flow succeeds with fictional data. The mobile Control / Send text layout was checked at 390 and 320 px without horizontal page overflow; [mobile preview](mobile-controller.png) is saved. The historical Files preview used mock Decky components and could not establish Steam controller focus or clipboard behavior; that UI has been removed in 0.1.4.
 
 All 23 Python checks pass in Ubuntu WSL, including real file copies and symlink protection in disposable directories. Windows runs pass with the symlink-creation check skipped because the host does not allow it. Uinput delivery remains mocked in these tests. All 13 client checks pass, including single/repeated/spaced/triple Escape presses, bounded free mouse control, mobile mode selection and tool changes releasing input.
 
@@ -34,8 +40,10 @@ All 23 Python checks pass in Ubuntu WSL, including real file copies and symlink 
 - Stop input. Verify port 8765 closes, both virtual devices disappear, and the laptop loses control. Enable and repeat once.
 - Reload/uninstall the plugin while paired. Verify the listener closes, input releases, and the next load starts disabled.
 - Leave Legion Library and other plugins installed; confirm their normal behavior still works.
-- With remote input off, choose **Open file browser** inside Decky. Verify the full-screen Files page opens in Gaming Mode, gamepad focus reaches folders/buttons/path fields, and Back to Steam returns to Steam.
-- Browse Home, show hidden files, open a safe folder link inside Home, enter `~/Downloads`, and browse mounted storage. Copy a folder or selected-file path with the field's clipboard action and paste it in a harmless text field.
-- Create a disposable test file with known content. Select it in Files, navigate to another folder or SD card, and choose Copy here. Verify identical contents, the source remains present, and a second copy refuses to replace the destination. Verify outside-root paths, file symlinks and folder copies cannot be copied.
+- With remote input off, choose **Open Dolphin** inside Decky. Verify the installed system Dolphin opens in Gaming Mode, remains visible/focused, and Steam shows Dolphin as a running app without switching to Desktop Mode.
+- Confirm **Dolphin (Decky Remote)** appears once in the current Steam account's non-Steam library. Close Dolphin, open it again through Decky and after a plugin/Steam restart, and verify no duplicate shortcut is added. Remove the shortcut through Steam and confirm the next button press recreates it.
+- Enable remote input and use the laptop mouse/keyboard in Dolphin. Check Home, Downloads, mounted storage, Ctrl+L for a path, Ctrl+C/Ctrl+V with a disposable file, and F3 for split view. Verify dialogs are visible and usable, copies have ordinary user ownership, and Dolphin exits normally with Ctrl+Q or Steam's Exit action. These are Dolphin's native operations, outside the plugin's former Home/storage boundary.
+- If using multiple Steam accounts, verify each account launches its own Dolphin shortcut. Check other plugins and existing non-Steam apps are unchanged.
+
 
 If enabling fails, record the exact error from the Decky panel. If connections fail, check LAN client isolation, the displayed IP and port, and the device firewall before changing the plugin. Hardware acceptance is pending until this checklist is performed.

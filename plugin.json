@@ -1,10 +1,15 @@
 {
   "name": "Decky Remote",
   "author": "Custom Decky Plugins",
-  "flags": ["root"],
+  "flags": [
+    "root"
+  ],
   "api_version": 1,
   "publish": {
-    "tags": ["utility", "input"],
-    "description": "Control SteamOS from a paired browser, and browse or copy files inside Gaming Mode."
+    "tags": [
+      "utility",
+      "input"
+    ],
+    "description": "Control SteamOS from a paired browser and open the system Dolphin file manager in Gaming Mode."
   }
 }

@@ -1,18 +1,28 @@
 import { useEffect, useState } from "react";
 import { ButtonItem, Navigation, PanelSection, PanelSectionRow, staticClasses } from "@decky/ui";
-import { callable, definePlugin, routerHook } from "@decky/api";
-import FileBrowser from "./FileBrowser";
+import { callable, definePlugin } from "@decky/api";
+import { createDolphinLauncher, type LaunchInfo, type SteamHost } from "./dolphin";
 
 type Status = { enabled: boolean; paired: boolean; pin: string; client: string; urls: string[]; error: string };
 const getStatus = callable<[], Status>("get_status");
 const start = callable<[], Status>("start_remote");
 const stop = callable<[], Status>("stop_remote");
 const disconnect = callable<[], Status>("disconnect_client");
+const getDolphinInfo = callable<[], LaunchInfo>("get_dolphin_launch_info");
+const openDolphin = createDolphinLauncher(window as unknown as SteamHost, getDolphinInfo, () => Navigation.CloseSideMenus());
 
 function RemotePanel() {
   const [status, setStatus] = useState<Status>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [openingDolphin, setOpeningDolphin] = useState(false);
+  const [dolphinError, setDolphinError] = useState("");
+  const launchDolphin = async () => {
+    setOpeningDolphin(true); setDolphinError("");
+    try { await openDolphin(); }
+    catch (error) { setDolphinError(error instanceof Error ? error.message : "Cannot open Dolphin. Reopen Decky and try again."); }
+    finally { setOpeningDolphin(false); }
+  };
   useEffect(() => {
     let mounted = true;
     let polling = false;
@@ -50,17 +60,17 @@ function RemotePanel() {
     </ButtonItem></PanelSectionRow>
     {status?.enabled && status.paired && <PanelSectionRow><ButtonItem layout="below" disabled={busy} onClick={() => { void run(disconnect); }}>Disconnect laptop</ButtonItem></PanelSectionRow>}
     <PanelSectionRow><div style={{ fontSize: 12, lineHeight: 1.5, color: "#b8c2ce" }}>Control is off after every plugin restart. Only one laptop can pair. This local HTTP connection is unencrypted; use trusted Wi-Fi and stop it when finished.</div></PanelSectionRow>
-    <PanelSectionRow><ButtonItem layout="below" onClick={() => { Navigation.CloseSideMenus(); Navigation.Navigate("/decky-remote/files"); }}>Open file browser</ButtonItem></PanelSectionRow>
+    <PanelSectionRow><ButtonItem layout="below" disabled={openingDolphin} onClick={() => { void launchDolphin(); }}>{openingDolphin ? "Opening Dolphin…" : "Open Dolphin"}</ButtonItem></PanelSectionRow>
+    <PanelSectionRow><div style={{ fontSize: 12, lineHeight: 1.5, color: "#b8c2ce" }}>Use the system file manager in Gaming Mode. Control it with your touchscreen or paired laptop. Steam adds a reusable Dolphin shortcut on first use.</div></PanelSectionRow>
+    {dolphinError && <PanelSectionRow><div role="alert" style={{ color: "#ffbd89" }}>{dolphinError}</div></PanelSectionRow>}
   </PanelSection>;
 }
 
 export default definePlugin(() => {
-  routerHook.addRoute("/decky-remote/files", FileBrowser);
   return {
     name: "Decky Remote",
     titleView: <div className={staticClasses.Title}>Decky Remote</div>,
     icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="15" height="11" rx="2"/><path d="M1 19h17m3-10v10m-2-2 2 2 2-2"/></svg>,
     content: <RemotePanel />,
-    onDismount() { routerHook.removeRoute("/decky-remote/files"); },
   };
 });
