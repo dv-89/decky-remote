@@ -134,13 +134,27 @@ class FileShare:
             os.close(descriptor)
             os.unlink(temporary, dir_fd=directory)
             raise
-        return {"id": identifier, "chunkSize": CHUNK}
+        return {"id": identifier, "chunkSize": CHUNK, "streaming": True}
 
-    def append(self, identifier, offset, payload):
+    def start_stream(self, identifier, size):
+        self.expire()
+        upload = self.upload
+        if not upload or upload["id"] != identifier:
+            raise TransferError(404, "Upload expired or was cancelled; send the file again")
+        if upload.get("receiving") or upload["offset"]:
+            raise TransferError(409, "This upload is already receiving data")
+        if size != upload["size"]:
+            raise TransferError(413, "Upload length does not match the selected file")
+        upload["receiving"] = True
+        upload["seen"] = self.clock()
+
+    def append(self, identifier, offset, payload, *, stream=False):
         self.expire()
         upload = self.upload
         if not upload or identifier != upload["id"]:
             raise TransferError(404, "Upload expired or was cancelled; send the file again")
+        if bool(upload.get("receiving")) != stream:
+            raise TransferError(409, "This upload is already receiving data")
         if type(offset) is not int or offset != upload["offset"]:
             raise TransferError(409, "Upload offset does not match; send the file again")
         if not 1 <= len(payload) <= CHUNK or offset + len(payload) > upload["size"]:
@@ -167,10 +181,12 @@ class FileShare:
         except OSError:
             return False
 
-    def finish(self, data):
+    def finish(self, data, *, stream=False):
         if set(data) != {"id"} or not self.upload or data["id"] != self.upload["id"]:
             raise TransferError(404, "Upload not found")
         upload = self.upload
+        if bool(upload.get("receiving")) != stream:
+            raise TransferError(409, "Wait for the upload to finish receiving data")
         if upload["offset"] != upload["size"]:
             raise TransferError(409, "File is incomplete; upload all chunks before finishing")
         if not self._same_temporary(upload):

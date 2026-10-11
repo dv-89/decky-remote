@@ -297,6 +297,108 @@ class FileHTTPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(code, 200)
         return await self.request("/api/files/finish", {"id": identifier})
 
+    async def start_upload(self, size, name="stream.bin"):
+        code, _, body = await self.request("/api/files/begin", {"name": name, "size": size})
+        self.assertEqual(code, 200)
+        self.assertTrue(json.loads(body)["streaming"])
+        return json.loads(body)["id"]
+
+    async def open_stream(self, identifier, size):
+        reader, writer = await asyncio.open_connection("127.0.0.1", self.server.port)
+        writer.write((f"POST /api/files/upload HTTP/1.1\r\nHost: {self.host}\r\n"
+                      f"Origin: http://{self.host}\r\nContent-Type: application/octet-stream\r\n"
+                      f"Authorization: Bearer {self.token}\r\nX-Upload-ID: {identifier}\r\n"
+                      f"Content-Length: {size}\r\n\r\n").encode())
+        await writer.drain()
+        for _ in range(100):
+            if self.files.upload and self.files.upload.get("receiving"):
+                break
+            await asyncio.sleep(.001)
+        return reader, writer
+
+    async def test_continuous_upload_exact_bytes_hash_empty_and_duplicate(self):
+        folder = Path(self.temp.name) / "Downloads" / "Decky Remote"
+        for payload in (bytes(range(256)) * 8193, b""):
+            identifier = await self.start_upload(len(payload))
+            code, _, body = await self.request("/api/files/upload", payload, extra=f"X-Upload-ID: {identifier}\r\n")
+            self.assertEqual(code, 200)
+            result = json.loads(body)
+            self.assertEqual(result["sha256"], hashlib.sha256(payload).hexdigest())
+            self.assertEqual((folder / result["name"]).read_bytes(), payload)
+            self.assertIsNone(self.files.upload)
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["stream (2).bin", "stream.bin"])
+
+    async def test_stream_auth_and_length_checked_before_body_without_claiming(self):
+        code, _, _ = await self.request("/api/files/upload", b"", token="wrong", declared=1234567)
+        self.assertEqual(code, 401)
+        self.assertFalse((Path(self.temp.name) / "Downloads").exists())
+        identifier = await self.start_upload(2)
+        for body, header, expected in ((b"x", identifier, 413), (b"xx", "wrong", 404)):
+            code, _, _ = await self.request("/api/files/upload", body, extra=f"X-Upload-ID: {header}\r\n")
+            self.assertEqual(code, expected)
+            self.assertFalse(self.files.upload.get("receiving"))
+        code, _, _ = await self.request("/api/files/upload", b"xx", extra=f"X-Upload-ID: {identifier}\r\n", origin="http://evil.example")
+        self.assertEqual(code, 403)
+
+    async def test_stream_conflicts_and_heartbeat_then_success(self):
+        identifier = await self.start_upload(2)
+        reader, writer = await self.open_stream(identifier, 2)
+        try:
+            for path, body, extra in (("upload", b"xx", f"X-Upload-ID: {identifier}\r\n"),
+                                      ("chunk", b"x", f"X-Upload-ID: {identifier}\r\nX-Upload-Offset: 0\r\n"),
+                                      ("finish", {"id": identifier}, "")):
+                code, _, _ = await self.request("/api/files/" + path, body, extra=extra)
+                self.assertEqual(code, 409)
+            # Exceed the ordinary five-second request limit, keeping pairing alive.
+            for _ in range(6):
+                code, _, _ = await self.request("/api/heartbeat", {})
+                self.assertEqual(code, 200)
+                await asyncio.sleep(.9)
+            writer.write(b"xx"); await writer.drain()
+            response = await asyncio.wait_for(reader.read(), 3)
+            self.assertTrue(response.startswith(b"HTTP/1.1 200"))
+        finally:
+            writer.close(); await writer.wait_closed()
+
+    async def test_interrupted_and_stalled_stream_clean_partial(self):
+        identifier = await self.start_upload(10)
+        reader, writer = await self.open_stream(identifier, 10)
+        writer.write(b"abc"); await writer.drain(); writer.write_eof()
+        self.assertTrue((await reader.read()).startswith(b"HTTP/1.1 400"))
+        writer.close(); await writer.wait_closed()
+        self.assertIsNone(self.files.upload)
+        with patch("remote_server.UPLOAD_IDLE_TIMEOUT", .05):
+            identifier = await self.start_upload(10)
+            reader, writer = await self.open_stream(identifier, 10)
+            self.assertTrue((await reader.read()).startswith(b"HTTP/1.1 408"))
+            writer.close(); await writer.wait_closed()
+        self.assertIsNone(self.files.upload)
+        self.assertEqual(list((Path(self.temp.name) / "Downloads" / "Decky Remote").iterdir()), [])
+
+    async def test_cancelled_old_stream_does_not_cancel_new_upload(self):
+        identifier = await self.start_upload(10)
+        reader, writer = await self.open_stream(identifier, 10)
+        await self.request("/api/files/cancel", {"id": identifier})
+        newer = await self.start_upload(1)
+        writer.write(b"x"); await writer.drain()
+        self.assertTrue((await reader.read()).startswith(b"HTTP/1.1 404"))
+        writer.close(); await writer.wait_closed()
+        self.assertEqual(self.files.upload["id"], newer)
+
+    async def test_stream_disk_failure_and_stop_cleanup(self):
+        identifier = await self.start_upload(1)
+        with patch("file_share.os.write", side_effect=OSError("disk full")):
+            code, _, _ = await self.request("/api/files/upload", b"x", extra=f"X-Upload-ID: {identifier}\r\n")
+        self.assertEqual(code, 507)
+        self.assertIsNone(self.files.upload)
+        self.assertEqual((await self.request("/api/heartbeat", {}))[0], 200)
+        identifier = await self.start_upload(10)
+        reader, writer = await self.open_stream(identifier, 10)
+        await asyncio.wait_for(self.server.stop(), 2)
+        self.assertEqual(await reader.read(), b"")
+        writer.close(); await writer.wait_closed()
+        self.assertIsNone(self.files.upload)
+
     async def test_real_upload_download_stream_headers_and_one_use(self):
         payload = bytes(range(256)) * 2048
         code, _, _ = await self.upload(payload, "文件.txt")

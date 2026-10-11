@@ -24,7 +24,8 @@ function harness(handler) {
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const document = {getElementById: id => elements[id], createElement: () => new Element(), body: new Element()};
   let paired = true;
-  const context = vm.createContext({window: {}, document, AbortController, DOMException});
+  let now = 10000;
+  const context = vm.createContext({window: {}, document, AbortController, DOMException, Date: {now: () => now}});
   vm.runInContext(readFileSync(new URL("../web/files.js", import.meta.url), "utf8"), context);
   const api = context.window.createFileSharing({paired: () => paired, request: async (path, data, options) => {
     calls.push({path, data, options});
@@ -37,7 +38,7 @@ function harness(handler) {
     if (path.endsWith("download")) return {url: "/download/" + "a".repeat(48)};
     return {ok: true};
   }});
-  return {elements, api, calls, links, unpair() { paired = false; api.reset(); },
+  return {elements, api, calls, links, advance(ms) { now += ms; }, unpair() { paired = false; api.reset(); },
     async upload(files) { elements.fileInput.files = files; elements.fileInput.emit("change"); await settle(); }};
 }
 
@@ -53,6 +54,56 @@ test("multiple file picker uploads are sequential, chunked, and show completion"
   assert.match(h.elements.fileStatus.textContent, /Uploaded 2 files/);
   assert.equal(h.elements.fileInput.disabled, false);
   assert.equal(h.elements.fileProgress.hidden, true);
+});
+
+test("streaming upload sends one whole File with speed and ETA; completion waits for save reply", async () => {
+  let resolveUpload, options;
+  const h = harness((path, _, opts) => {
+    if (path.endsWith("begin")) return {id:"stream", streaming:true};
+    if (path.endsWith("upload")) { options=opts; return new Promise(resolve=>{resolveUpload=resolve;}); }
+  });
+  const original = file("large.bin", "12345678");
+  await h.upload([original]);
+  assert.equal(options.body,original);assert.equal(options.upload,true);
+  assert.equal(options.headers["X-Upload-ID"],"stream");
+  h.advance(2000);options.onProgress(4);
+  assert.match(h.elements.fileStatus.textContent,/50%.*2 B\/s.*2 sec left/);
+  options.onProgress(8);assert.match(h.elements.fileStatus.textContent,/Saving large.bin/);
+  assert.equal(h.elements.fileInput.disabled,true);
+  resolveUpload({name:"large (2).bin"});await settle();
+  assert.match(h.elements.fileStatus.textContent,/Uploaded large \(2\).bin/);
+  assert.equal(h.calls.filter(call=>/chunk|finish/.test(call.path)).length,0);
+});
+
+test("stream cancellation and failure clean partial files and retain completed batch files",async()=>{
+  for(const cancel of [false,true]){
+    let uploads=0;
+    const h=harness((path,_,options)=>{
+      if(path.endsWith("begin"))return {id:"stream",streaming:true};
+      if(path.endsWith("upload")){
+        if(++uploads===1)return {name:"first"};
+        if(cancel)return new Promise((_,reject)=>options.signal.addEventListener("abort",()=>reject(new DOMException("Cancelled","AbortError"))));
+        throw new Error("Disk full");
+      }
+    });
+    await h.upload([file("first",""),file("second","x")]);
+    if(cancel){h.elements.cancelUpload.emit("click");await settle();}
+    assert.equal(h.calls.filter(call=>call.path.endsWith("cancel")).length,1);
+    assert.match(h.elements.fileStatus.textContent,/1 completed file remains/);
+    assert.equal(h.elements.fileInput.disabled,false);
+  }
+});
+
+test("late stream progress and replies after session reset cannot change UI or cancel new work",async()=>{
+  let resolveUpload,options;
+  const h=harness((path,_,opts)=>{
+    if(path.endsWith("begin"))return {id:"old",streaming:true};
+    if(path.endsWith("upload")){options=opts;return new Promise(resolve=>{resolveUpload=resolve;});}
+  });
+  await h.upload([file("old","123")]);h.unpair();
+  options.onProgress(3);resolveUpload({name:"old"});await settle();
+  assert.match(h.elements.fileStatus.textContent,/Pair with the Legion/);
+  assert.equal(h.calls.some(call=>call.path.endsWith("cancel")),false);
 });
 
 test("list renders filenames as text and downloads with a temporary same-origin link", async () => {

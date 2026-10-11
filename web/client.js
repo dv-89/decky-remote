@@ -114,9 +114,63 @@ function api(path, data, {fatal = true, keepalive = false} = {}) {
   serial = result.catch(() => {});
   return result;
 }
-async function fileRequest(path, data, {signal, body, headers = {"Content-Type":"application/json"}} = {}) {
+function uploadFile(path, body, headers, signal, onProgress, credential) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let timer, settled = false;
+    function finish(error, result) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      if (error) reject(error); else resolve(result);
+    }
+    function abort() {
+      finish(new DOMException("Cancelled", "AbortError"));
+      xhr.abort();
+    }
+    function activity() {
+      clearTimeout(timer);
+      if (settled) return;
+      timer = setTimeout(() => {
+        finish(new Error("Upload stalled. Check Wi-Fi and send the file again."));
+        xhr.abort();
+      }, 30000);
+    }
+    if (signal?.aborted) { finish(new DOMException("Cancelled", "AbortError")); return; }
+    xhr.open("POST", path);
+    xhr.withCredentials = false;
+    xhr.responseType = "json";
+    for (const [key, value] of Object.entries({...headers, Authorization:"Bearer " + credential})) xhr.setRequestHeader(key, value);
+    xhr.upload.onprogress = event => {
+      if (settled || credential !== token) return;
+      activity();
+      onProgress?.(Math.min(event.loaded, body.size));
+    };
+    xhr.upload.onload = () => { activity(); if (!settled && credential === token) onProgress?.(body.size); };
+    xhr.onreadystatechange = () => { if (xhr.readyState >= 2) activity(); };
+    xhr.onload = () => {
+      if (credential !== token) { finish(new Error("Session changed; pair again before sharing files")); return; }
+      const result = xhr.response;
+      if (!result || typeof result !== "object") { finish(new Error("Invalid upload response; refresh Files to check whether it was saved.")); return; }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        if (xhr.status === 401) ended(result.error || "Session ended; pair again in Decky.");
+        finish(new Error(result.error || "File transfer failed"));
+      } else finish(null, result);
+    };
+    xhr.onerror = () => finish(new Error("Upload connection lost. Check Wi-Fi and send the file again."));
+    xhr.onabort = () => finish(new DOMException("Cancelled", "AbortError"));
+    signal?.addEventListener("abort", abort, {once:true});
+    activity();
+    // The browser streams the File itself; no full-file buffer or per-chunk
+    // round trips. Upload progress means sent, success means saved on Legion.
+    try { xhr.send(body); } catch (error) { finish(error); }
+  });
+}
+async function fileRequest(path, data, {signal, body, headers = {"Content-Type":"application/json"}, upload = false, onProgress} = {}) {
   const credential = token;
   if (!credential) throw new Error("Pair with the Legion before sharing files");
+  if (upload) return uploadFile(path, body, headers, signal, onProgress, credential);
   const timeout = new AbortController();
   const abort = () => timeout.abort();
   signal?.addEventListener("abort", abort, {once: true});

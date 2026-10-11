@@ -41,24 +41,80 @@ function harness({pointerLock="promise", mode="mouse", coarse=false}={}) {
   const window=new Element("window");
   window.matchMedia=()=>({matches:coarse});
   const intervals=[], calls=[];
-  let reject=false;
+  const uploads=[];
+  class XHR {
+    constructor(){this.upload={};this.headers={};uploads.push(this);}
+    open(method,path){this.method=method;this.path=path;}
+    setRequestHeader(key,value){this.headers[key]=value;}
+    send(body){this.body=body;}
+    abort(){this.aborted=true;this.onabort?.();}
+    progress(loaded){this.upload.onprogress?.({loaded});}
+    complete(status=200,response={name:"saved.bin"}){this.status=status;this.response=response;this.onload();}
+  }
+  let reject=false, pairs=0;
   // Deliberately omit navigator.keyboard and fullscreen: ordinary handheld
   // HTTP pages must capture without either privileged browser feature.
-  const context=vm.createContext({document:doc,window,Date:{now:()=>now},AbortController,console,
+  const context=vm.createContext({document:doc,window,Date:{now:()=>now},AbortController,DOMException,XMLHttpRequest:XHR,console,
     setTimeout:(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,at:now+ms});return id;},clearTimeout:id=>timers.delete(id),
     setInterval:fn=>intervals.push(fn),fetch:async(path,opts)=>{
     calls.push({path,data:JSON.parse(opts.body),headers:opts.headers});
-    return {ok:!reject,status:reject?401:200,json:async()=>reject?{error:"Session ended"}:path==="/api/pair"?{token:"test-token"}:{ok:true}};
+    return {ok:!reject,status:reject?401:200,json:async()=>reject?{error:"Session ended"}:path==="/api/pair"?{token:++pairs===1?"test-token":"test-token-"+pairs}:{ok:true}};
   }});
   vm.runInContext(readFileSync(new URL("../web/client.js",import.meta.url),"utf8"),context);
   if(!coarse)elements.mode.value=mode;
-  return {elements,left,enter,back,deleteKey,doc,window,intervals,calls,lockCalls, reject:()=>{reject=true;},
+  return {elements,left,enter,back,deleteKey,doc,window,intervals,calls,lockCalls,uploads, reject:()=>{reject=true;},
+    upload(body,options={}){context.uploadBody=body;context.uploadOptions=options;return vm.runInContext('fileRequest("/api/files/upload", null, {body:uploadBody,upload:true,headers:{"Content-Type":"application/octet-stream","X-Upload-ID":"id"},...uploadOptions})',context);},
     advance(ms){now+=ms;for(const [id,timer] of timers)if(timer.at<=now){timers.delete(id);timer.fn();}},
     get lockRequests(){return lockRequests;},
     async completeLock(){doc.pointerLockElement=elements.pad;await doc.emit("pointerlockchange");completeRequest?.();await new Promise(resolve=>setTimeout(resolve,0));},
     async pair(){elements.pin.value="00123456";await elements.pairForm.emit("submit");},
     async flush(){await intervals[0]();await new Promise(resolve=>setTimeout(resolve,0));}};
 }
+
+test("native upload sends the original Blob once and remains active with ongoing progress",async()=>{
+  const h=harness();await h.pair();
+  const body=new Blob(["abcdef"]), progress=[];
+  const pending=h.upload(body,{onProgress:loaded=>progress.push(loaded)});
+  const xhr=h.uploads[0];
+  assert.equal(xhr.body,body);assert.equal(xhr.path,"/api/files/upload");
+  assert.equal(xhr.withCredentials,false);assert.equal(xhr.responseType,"json");
+  assert.deepEqual(xhr.headers,{"Content-Type":"application/octet-stream","X-Upload-ID":"id",Authorization:"Bearer test-token"});
+  for(let i=1;i<=5;i++){h.advance(20000);xhr.progress(i);assert.equal(xhr.aborted,undefined);}
+  xhr.upload.onload();assert.deepEqual(progress,[1,2,3,4,5,6]);
+  xhr.complete();assert.equal((await pending).name,"saved.bin");
+  h.advance(60000);assert.equal(xhr.aborted,undefined);
+});
+
+test("upload cancellation, pre-abort, inactivity and network failure settle and clear timers",async()=>{
+  for(const action of ["cancel","preabort","idle","network"]){
+    const h=harness();await h.pair();const abort=new AbortController();
+    if(action==="preabort")abort.abort();
+    const pending=h.upload(new Blob(["a"]),{signal:abort.signal});
+    const rejected=assert.rejects(pending,action==="idle"?/Upload stalled/:action==="network"?/connection lost/:{name:"AbortError"});
+    const xhr=h.uploads[0];
+    if(action==="cancel")abort.abort();
+    if(action==="idle")h.advance(30001);
+    if(action==="network")xhr.onerror();
+    await rejected;h.advance(60000);
+    if(action==="network"||action==="preabort")assert.equal(xhr.aborted,undefined);
+    else assert.equal(xhr.aborted,true);
+  }
+});
+
+test("upload errors and expired credentials are handled; stale replies cannot end a newer pairing",async()=>{
+  for(const status of [507,401,200]){
+    const h=harness();await h.pair();const pending=h.upload(new Blob(["a"]));
+    const rejected=assert.rejects(pending,status===200?/Invalid upload response/:/failure/);
+    h.uploads[0].complete(status,status===200?null:{error:"failure"});await rejected;
+    assert.equal(h.elements.controller.hidden,status===401);
+  }
+  const h=harness();await h.pair();let updates=0;
+  const pending=h.upload(new Blob(["a"]),{onProgress:()=>updates++});
+  const rejected=assert.rejects(pending,/Session changed/);
+  await h.elements.disconnect.emit("click");await h.pair();
+  h.uploads[0].progress(1);h.uploads[0].complete(401,{error:"old session"});
+  await rejected;assert.equal(updates,0);assert.equal(h.elements.controller.hidden,false);
+});
 
 test("Start control captures mouse and keyboard, including physical clicks and button chords", async()=>{
   const h=harness(); await h.pair();

@@ -99,19 +99,36 @@ window.createFileSharing = ({request, paired}) => {
         pending = true;
         const started = await request("/api/files/begin", {name: file.name, size: file.size}, {signal: abort.signal});
         check();
-        for (let offset = 0; offset < file.size;) {
-          const end = Math.min(offset + Math.min(chunkSize, started.chunkSize), file.size);
-          const part = file.slice(offset, end);
-          const result = await request("/api/files/chunk", null, {signal: abort.signal, body: part,
-            headers: {"Content-Type": "application/octet-stream", "X-Upload-ID": started.id, "X-Upload-Offset": String(offset)}});
-          check();
-          if (result.offset !== end) throw new Error("Upload progress did not match; send the file again");
-          offset = end;
-          const progress = Math.round(offset / file.size * 100);
-          el("fileProgress").value = progress;
-          message(`Uploading ${file.name} (${completed + 1}/${files.length}) — ${progress}%`);
+        const startTime = Date.now();
+        const progress = loaded => {
+          if (abort.signal.aborted || current !== generation || !paired()) return;
+          const percent = file.size ? Math.round(loaded / file.size * 100) : 100;
+          el("fileProgress").value = percent;
+          if (loaded >= file.size) { message(`Saving ${file.name} (${completed + 1}/${files.length})…`); return; }
+          const elapsed = (Date.now() - startTime) / 1000;
+          const rate = elapsed > 0 ? loaded / elapsed : 0;
+          const seconds = rate ? Math.ceil((file.size - loaded) / rate) : 0;
+          const eta = seconds >= 60 ? `${Math.ceil(seconds / 60)} min` : `${seconds} sec`;
+          message(`Uploading ${file.name} (${completed + 1}/${files.length}) — ${percent}%${rate ? ` · ${size(rate)}/s · about ${eta} left` : ""}`);
+        };
+        let saved;
+        if (started.streaming) {
+          saved = await request("/api/files/upload", null, {signal: abort.signal, body: file, upload: true,
+            headers: {"Content-Type": "application/octet-stream", "X-Upload-ID": started.id}, onProgress: progress});
+        } else {
+          // Older backends still support the original chunk protocol.
+          for (let offset = 0; offset < file.size;) {
+            const end = Math.min(offset + Math.min(chunkSize, started.chunkSize), file.size);
+            const part = file.slice(offset, end);
+            const result = await request("/api/files/chunk", null, {signal: abort.signal, body: part,
+              headers: {"Content-Type": "application/octet-stream", "X-Upload-ID": started.id, "X-Upload-Offset": String(offset)}});
+            check();
+            if (result.offset !== end) throw new Error("Upload progress did not match; send the file again");
+            offset = end;
+            progress(offset);
+          }
+          saved = await request("/api/files/finish", {id: started.id}, {signal: abort.signal});
         }
-        const saved = await request("/api/files/finish", {id: started.id}, {signal: abort.signal});
         check();
         pending = false; completed++;
         el("fileProgress").value = 100;

@@ -12,6 +12,18 @@ For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and t
 
 For 0.1.2, TypeScript typecheck, Rollup build and the compiled-plugin check passed. All 16 Python backend/protocol/HTTP checks and 10 browser-client checks passed, including horizontal/diagonal scrolling, pixel/line/page units, fractional deltas, axis limits, pause resets, HTTP delivery and packed Linux horizontal-wheel events. Real horizontal scrolling on the handheld remains pending device validation.
 
+## Version 0.1.13
+
+The user reported a slow 8 GB upload from laptop to Legion. Each file now uses one continuous binary HTTP request after begin, replacing sequential 256 KiB requests. The browser sends the original File with XMLHttpRequest and displays average speed and estimated time remaining. Progress reaching 100% means sent; the page waits for the server's save confirmation. The server reads/writes at most 256 KiB at a time, checks pairing and free space between pieces, and yields to input/heartbeats. A thirty-second inactivity deadline replaces the five-second whole-request deadline for this endpoint. Older clients can still use the chunk endpoint.
+
+New Linux HTTP checks cover exact multi-piece bytes and SHA-256, empty/duplicate files, authentication and length checks before body reads, overlapping stream/chunk/finish rejection, heartbeat responsiveness during a stream lasting beyond five seconds, interrupted/stalled uploads, cancellation followed by a newer upload, disk errors and shutdown cleanup. Browser tests cover sending the original Blob once, uploads lasting over fifteen seconds with active progress, abort/pre-abort/stall/network errors, malformed/expired/stale replies, speed/ETA, the saving state, batch failures and late progress after reset.
+
+`python3 scripts/benchmark_transfer.py 32 20` compares a 32 MiB payload on Linux loopback with a simulated 20 ms wait per file request. Legacy chunks took **2.844 seconds with 130 requests**; continuous upload took **0.157 seconds with 2 requests**. Both response and saved-file SHA-256 matched. This measures request overhead under simulated latency, not real Wi-Fi throughput or Legion storage performance. The benchmark bounds memory and removes its disposable files.
+
+All 49 Linux Python tests and 62 Node tests (19 client, 14 Files, 28 Dolphin, 1 bundle) pass, alongside TypeScript, Rollup and archive verification. The real in-app browser file picker completed a native XMLHttpRequest upload of the public LICENSE file into the disposable Linux preview folder, with no console errors. The Files page fits at 320 and 390 px without horizontal page overflow. [Successful browser upload](file-sharing.png).
+
+On the Legion, reload and re-pair after installing, repeat the same large upload, note the displayed MiB/s and elapsed time, and verify SHA-256 in Dolphin/terminal. Test cancel/disconnect during a transfer and normal input afterwards. An 8 GB hardware transfer and its actual speed remain pending user validation.
+
 ## Version 0.1.12
 
 The old 2 GiB cap is replaced by available space minus a 64 MiB reserve. The browser checks the full selection before any file begins; the server checks again on begin and every chunk write. Tests cover whole-batch capacity, exact reserve boundaries, invalid sizes/counts, space dropping after a successful check and during a transfer, authenticated HTTP capacity checks, and cancellation/session reset during a pending capacity request. A sparse file exercises real writes and download descriptors on both sides of the 2 GiB offset boundary without allocating or transferring the entire sparse gap. This establishes size/offset handling, not a completed multi-gigabyte transfer on hardware.

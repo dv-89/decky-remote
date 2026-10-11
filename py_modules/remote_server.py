@@ -12,11 +12,12 @@ import sys
 import time
 from urllib.parse import quote
 
-from file_share import CHUNK, TransferError
+from file_share import CHUNK, MAX_SAFE_SIZE, TransferError
 
 from remote_input import UInput, TEXT_KEYS, validate_event
 
 PORT = 8765
+UPLOAD_IDLE_TIMEOUT = 30
 NETWORKS = tuple(ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"))
 
 
@@ -55,6 +56,11 @@ class Download:
     def __init__(self, descriptor, name, size, token, peer):
         self.descriptor, self.name, self.size = descriptor, name, size
         self.token, self.peer = token, peer
+
+
+class Upload:
+    def __init__(self, identifier, size, token, peer):
+        self.identifier, self.size, self.token, self.peer = identifier, size, token, peer
 
 
 class RemoteServer:
@@ -275,11 +281,17 @@ class RemoteServer:
             writer.close()
             return
         self.clients.add(task)
-        download = None
+        download = upload = None
         try:
             async with asyncio.timeout(5):
                 response = await self._request(reader, writer)
-            if isinstance(response, Download):
+            if isinstance(response, Upload):
+                upload = response
+                async with asyncio.timeout(3600):
+                    result = await self._upload(reader, upload)
+                async with asyncio.timeout(5):
+                    await self._respond(writer, 200, "application/json", json.dumps(result).encode())
+            elif isinstance(response, Download):
                 download = response
                 async with asyncio.timeout(3600):
                     await self._download(writer, download)
@@ -299,6 +311,11 @@ class RemoteServer:
         except TimeoutError:
             pass
         finally:
+            # No await here: stop() holds the dispatch lock while cancelling
+            # clients. An old stream must never cancel a newer upload.
+            if upload and self.files and self.files.upload and self.files.upload["id"] == upload.identifier:
+                with contextlib.suppress(OSError):
+                    self.files.cancel({"id": upload.identifier})
             if download:
                 os.close(download.descriptor)
             writer.close()
@@ -349,18 +366,32 @@ class RemoteServer:
         if method == "GET" and path in assets:
             name, content_type = assets[path]
             return 200, content_type, (self.web_dir / name).read_bytes()
-        file_actions = {"/api/files/" + name: name for name in ("list", "preflight", "begin", "chunk", "finish", "cancel", "download")}
+        file_actions = {"/api/files/" + name: name for name in ("list", "preflight", "begin", "upload", "chunk", "finish", "cancel", "download")}
         if method != "POST" or path not in ("/api/pair", "/api/events", "/api/text", "/api/heartbeat", "/api/disconnect", *file_actions):
             raise HTTPError(404, "Not found")
         chunk = path == "/api/files/chunk"
-        if headers.get("origin") != "http://" + host or headers.get("content-type") != ("application/octet-stream" if chunk else "application/json"):
+        streaming = path == "/api/files/upload"
+        if headers.get("origin") != "http://" + host or headers.get("content-type") != ("application/octet-stream" if chunk or streaming else "application/json"):
             raise HTTPError(403, "Use the controller page served by this handheld")
         length = headers.get("content-length", "")
-        if not length.isascii() or not length.isdigit() or not 1 <= int(length) <= (CHUNK if chunk else 8192):
+        if (not length.isascii() or not length.isdigit() or len(length) > 16
+                or not (0 if streaming else 1) <= int(length) <= (MAX_SAFE_SIZE if streaming else CHUNK if chunk else 8192)):
             raise HTTPError(413, "Invalid request length")
         if path in file_actions:
             # Authenticate before reading a file body or touching the filesystem.
             self._authorize(peer, headers.get("authorization", ""))
+        if streaming:
+            async with self.lock:
+                self._authorize(peer, headers.get("authorization", ""))
+                if not self.server or not self.files:
+                    raise HTTPError(503, "File sharing is unavailable")
+                identifier = headers.get("x-upload-id", "")
+                try:
+                    self.files.start_stream(identifier, int(length))
+                except TransferError as error:
+                    raise HTTPError(error.status, error.message) from error
+                self.last_seen = self.clock()
+                return Upload(identifier, int(length), self.token, peer)
         if chunk:
             offset = headers.get("x-upload-offset", "")
             if not offset.isascii() or not offset.isdigit() or len(offset) > 16:
@@ -399,13 +430,43 @@ class RemoteServer:
         return 200, "application/json", json.dumps(result).encode()
 
     async def _respond(self, writer, status, content_type, payload):
-        phrases = {200: "OK", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 409: "Conflict", 413: "Payload Too Large", 429: "Too Many Requests", 503: "Service Unavailable", 507: "Insufficient Storage"}
+        phrases = {200: "OK", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 408: "Request Timeout", 409: "Conflict", 413: "Payload Too Large", 429: "Too Many Requests", 503: "Service Unavailable", 507: "Insufficient Storage"}
         headers = (f"HTTP/1.1 {status} {phrases[status]}\r\nContent-Type: {content_type}\r\n"
                    f"Content-Length: {len(payload)}\r\nConnection: close\r\nCache-Control: no-store\r\n"
                    "X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n"
                    "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n\r\n")
         writer.write(headers.encode() + payload)
         await writer.drain()
+
+    async def _upload(self, reader, upload):
+        offset = 0
+        try:
+            while offset < upload.size:
+                try:
+                    async with asyncio.timeout(UPLOAD_IDLE_TIMEOUT):
+                        payload = await reader.read(min(CHUNK, upload.size - offset))
+                except TimeoutError:
+                    raise HTTPError(408, "Upload stalled; check Wi-Fi and send the file again") from None
+                if not payload:
+                    raise HTTPError(400, "Upload was interrupted; send the file again")
+                async with self.lock:
+                    self._authorize(upload.peer, "Bearer " + upload.token)
+                    if not self.server:
+                        raise HTTPError(503, "Remote input is stopped")
+                    self.files.append(upload.identifier, offset, payload, stream=True)
+                    self.last_seen = self.clock()
+                offset += len(payload)
+                # A hot socket must still let input, heartbeat and cancellation run.
+                await asyncio.sleep(0)
+            async with self.lock:
+                self._authorize(upload.peer, "Bearer " + upload.token)
+                result = self.files.finish({"id": upload.identifier}, stream=True)
+                self.last_seen = self.clock()
+                return result
+        except TransferError as error:
+            raise HTTPError(error.status, error.message) from error
+        except OSError as error:
+            raise HTTPError(507, "Upload failed; check free space and send the file again") from error
 
     async def _download(self, writer, download):
         headers = ("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"

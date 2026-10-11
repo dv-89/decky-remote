@@ -1,6 +1,6 @@
 {
   "name": "decky-remote",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Browser keyboard, mouse and file sharing for SteamOS",
   "type": "module",
   "license": "MIT",
