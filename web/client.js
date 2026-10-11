@@ -21,7 +21,7 @@ function setCapture(value) {
   active = value && !!token;
   pad.classList.toggle("active", active);
   el("capture").textContent = active ? "Pause control" : "Start control";
-  el("captureHint").textContent = active ? "Keys go to the Legion while the pad has focus. Escape pauses control." : "Start control to send keys. Drag inside the pad to move the cursor.";
+  el("captureHint").textContent = active ? "Keys go to the handheld while the pad has focus. Escape pauses control." : "Start control to send keys. Drag inside the pad to move the cursor.";
   if (active) pad.focus();
   else {
     drag = null;
@@ -96,7 +96,7 @@ el("pairForm").addEventListener("submit", async event => {
     const result = await api("/api/pair", {pin:el("pin").value}, {fatal:false});
     token = result.token; el("pin").value = "";
     el("pairPanel").hidden = true; el("controller").hidden = false;
-    status("Paired with your Legion. Start control or send text.");
+    status("Paired with your handheld. Start control or send text.");
   } catch (error) { status(error.message, true); }
   finally { pairing = false; el("pairButton").disabled = false; }
 });
@@ -190,7 +190,7 @@ el("sendText").addEventListener("click", async () => {
   if (!text.length || /[^\x09\x0a\x20-\x7e]/.test(text)) { status("Enter 1–128 US English characters. Unicode text is not supported yet.", true); return; }
   setCapture(false); await flush();
   el("sendText").disabled = true;
-  try { await api("/api/text", {text}); el("text").value = ""; status("Text sent. Check the selected field on the Legion."); }
+  try { await api("/api/text", {text}); el("text").value = ""; status("Text sent. Check the selected field on the handheld."); }
   catch (error) { status(error.message, true); }
   finally { el("sendText").disabled = false; }
 });

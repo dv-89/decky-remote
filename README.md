@@ -1,4 +1,4 @@
-# Legion Remote 0.1.0
+# Decky Remote 0.1.0
 
 A separate Decky plugin that turns a laptop browser into a keyboard and mouse for a Legion Go S running SteamOS. Both devices connect to the same trusted private LAN. Look at the handheld's screen while controlling it; this version sends input only.
 
@@ -6,18 +6,20 @@ A separate Decky plugin that turns a laptop browser into a keyboard and mouse fo
 
 ## Install and connect
 
-[Download the installable ZIP](https://github.com/dv-89/wireless-remote/raw/refs/heads/main/release/legion-remote-0.1.0.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
+[Download the installable ZIP](https://github.com/dv-89/decky-remote/raw/refs/heads/main/release/decky-remote-0.1.0.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
 
 ```text
-https://raw.githubusercontent.com/dv-89/wireless-remote/main/release/legion-remote-0.1.0.zip
+https://raw.githubusercontent.com/dv-89/decky-remote/main/release/decky-remote-0.1.0.zip
 ```
 
 GitHub's **Download ZIP** button downloads source code, which is different from the installable plugin ZIP linked above.
 
-1. Transfer `release/legion-remote-0.1.0.zip` to the handheld using a USB drive or your usual file-transfer tool.
-2. In Decky's settings, enable Developer mode and select **Install Plugin from ZIP File**. Choose this ZIP. Menu wording may differ by Decky version. The ZIP's root folder is `legion-remote/`; it is a separate installation from Legion Library.
+If you installed the earlier **Legion Remote** build, stop its remote input service and uninstall it through Decky before installing **Decky Remote**. The renamed package uses a different plugin folder; leaving the old copy enabled can occupy the same network port.
+
+1. Transfer `release/decky-remote-0.1.0.zip` to the handheld using a USB drive or your usual file-transfer tool.
+2. In Decky's settings, enable Developer mode and select **Install Plugin from ZIP File**. Choose this ZIP. Menu wording may differ by Decky version. The ZIP's root folder is `decky-remote/`; it is a separate installation from Legion Library.
 3. Connect the laptop and handheld to the same trusted private Wi-Fi or LAN.
-4. Open **Decky → Legion Remote → Enable remote input** on the Legion.
+4. Open **Decky → Decky Remote → Enable remote input** on the Legion.
 5. Type the displayed address (for example, `http://192.168.1.42:8765`) into the laptop's browser. Use the full numeric address, including `http://` and the port.
 6. Enter the eight-digit code shown in Decky, preserving any leading zeroes. One laptop can pair at a time.
 7. Select a text field on the handheld. On the laptop, use **Send text**, or choose **Start control** and type while the touchpad area has focus.
@@ -38,7 +40,7 @@ Nothing needs to be installed on the laptop. The laptop never needs your Steam p
 
 ## Permissions and pairing
 
-The plugin manifest requests Decky's `root` flag to open `/dev/uinput`. It creates two temporary devices, **Legion Remote Keyboard** and **Legion Remote Mouse**, when enabled. Stopping/unloading closes their file descriptors and destroys them. It does not run shell commands, install packages, change system files or read Steam account data. If uinput is absent or unavailable, enabling fails with an error shown in the Decky panel.
+The plugin manifest requests Decky's `root` flag to open `/dev/uinput`. It creates two temporary devices, **Decky Remote Keyboard** and **Decky Remote Mouse**, when enabled. Stopping/unloading closes their file descriptors and destroys them. It does not run shell commands, install packages, change system files or read Steam account data. If uinput is absent or unavailable, enabling fails with an error shown in the Decky panel.
 
 The laptop page and input API are served over **unencrypted HTTP** on the handheld. Use only a trusted private network. Avoid entering passwords or other sensitive information through this prototype. The code and session token protect pairing but do not encrypt network traffic; a network observer could capture them. Do not expose this port through a router or public proxy.
 

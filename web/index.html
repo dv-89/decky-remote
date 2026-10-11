@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Legion Remote</title><link rel="stylesheet" href="/style.css"><script defer src="/client.js"></script>
+  <title>Decky Remote</title><link rel="stylesheet" href="/style.css"><script defer src="/client.js"></script>
 </head>
 <body>
   <main>
-    <header><div class="badge">LEGION / REMOTE</div><h1>Your laptop.<br>Your Legion’s controls.</h1><p>Keyboard and mouse over your local Wi-Fi. Keep the Legion’s screen in view.</p></header>
+    <header><div class="badge">DECKY / REMOTE</div><h1>Your laptop.<br>Your handheld’s controls.</h1><p>Keyboard and mouse over your local Wi-Fi. Keep the handheld’s screen in view.</p></header>
     <div id="status" role="status" aria-live="polite">Enter the pairing code shown in Decky.</div>
     <section id="pairPanel" class="card">
-      <h2>Connect to your Legion</h2><p>On the handheld, open Decky → Legion Remote → Enable remote input.</p>
+      <h2>Connect to your handheld</h2><p>On the handheld, open Decky → Decky Remote → Enable remote input.</p>
       <form id="pairForm"><label for="pin">Eight-digit pairing code</label><div class="row"><input id="pin" name="pin" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" autocomplete="off" required placeholder="00000000"><button id="pairButton">Pair laptop</button></div></form>
       <p class="small">Use a trusted private network. This local HTTP connection is unencrypted.</p>
     </section>
@@ -23,7 +23,7 @@
         <p class="small">Capture mouse sends movement and physical clicks until Escape. Browser and Windows shortcuts may stay on your laptop. “Super + D” works only where SteamOS assigns that shortcut.</p>
       </section>
       <section class="card">
-        <h2>Send text</h2><label for="text">Select a text field on the Legion first</label><textarea id="text" rows="3" maxlength="128" placeholder="Type here, then send to the Legion…"></textarea>
+        <h2>Send text</h2><label for="text">Select a text field on the handheld first</label><textarea id="text" rows="3" maxlength="128" placeholder="Type here, then send to the handheld…"></textarea>
         <div class="row spread"><p class="small">Up to 128 characters. US English keyboard layout; letters, numbers, punctuation, tabs and newlines.</p><button id="sendText">Send text</button></div>
       </section>
       <div class="row spread footer"><span>Input releases when you switch windows or lose the connection.</span><button id="disconnect" class="danger">Disconnect laptop</button></div>

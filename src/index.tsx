@@ -35,7 +35,7 @@ function RemotePanel() {
   return <PanelSection title="Laptop keyboard & mouse">
     <PanelSectionRow><div style={{ fontSize: 13, lineHeight: 1.6 }}>
       {status?.enabled ? (status.paired ? `Connected: ${status.client}` : "Ready to pair") : "Remote input is off"}
-      <p>Keep both devices on the same trusted Wi-Fi. Look at the Legion’s screen while controlling it.</p>
+      <p>Keep both devices on the same trusted Wi-Fi. Look at the handheld’s screen while controlling it.</p>
       {status?.enabled && <>
         <p>On your laptop, open:</p>
         {status.urls.map(url => <div key={url} style={{ overflowWrap: "anywhere", fontWeight: 600 }}>{url}</div>)}
@@ -53,8 +53,8 @@ function RemotePanel() {
 }
 
 export default definePlugin(() => ({
-  name: "Legion Remote",
-  titleView: <div className={staticClasses.Title}>Legion Remote</div>,
+  name: "Decky Remote",
+  titleView: <div className={staticClasses.Title}>Decky Remote</div>,
   icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="15" height="11" rx="2"/><path d="M1 19h17m3-10v10m-2-2 2 2 2-2"/></svg>,
   content: <RemotePanel />,
   onDismount() {},

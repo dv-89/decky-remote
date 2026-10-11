@@ -13,10 +13,10 @@ for name in files:
         raise SystemExit(f"Missing {name}; finish the build before packaging")
 output = root / "release"
 output.mkdir(exist_ok=True)
-archive = output / f"legion-remote-{version}.zip"
+archive = output / f"decky-remote-{version}.zip"
 with zipfile.ZipFile(archive,"w",zipfile.ZIP_DEFLATED) as bundle:
     for name in files:
-        bundle.write(root / name, f"legion-remote/{name}")
+        bundle.write(root / name, f"decky-remote/{name}")
 digest = hashlib.sha256(archive.read_bytes()).hexdigest()
 archive.with_suffix(".zip.sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
 print(f"Created {archive.name} ({archive.stat().st_size:,} bytes), SHA-256 {digest}")

@@ -7,7 +7,7 @@ from remote_server import RemoteServer
 class Plugin:
     async def _main(self):
         self.remote = RemoteServer(Path(__file__).resolve().parent / "web")
-        decky.logger.info("Legion Remote loaded; LAN input is off")
+        decky.logger.info("Decky Remote loaded; LAN input is off")
 
     async def get_status(self):
         return self.remote.status()

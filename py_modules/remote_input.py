@@ -72,8 +72,8 @@ class UInput:
         self.fds = []
         self.held = set()
         try:
-            self.keyboard = self._device("Legion Remote Keyboard", sorted(set(KEYS.values())), ())
-            self.mouse = self._device("Legion Remote Mouse", BUTTONS.values(), (0, 1, 8))
+            self.keyboard = self._device("Decky Remote Keyboard", sorted(set(KEYS.values())), ())
+            self.mouse = self._device("Decky Remote Mouse", BUTTONS.values(), (0, 1, 8))
         except BaseException:
             self.close()
             raise

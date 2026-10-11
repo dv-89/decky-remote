@@ -8,7 +8,7 @@ Verified locally on October 11, 2026: TypeScript typecheck and Rollup build pass
 
 ## On the Legion Go S
 
-- Install the release ZIP and confirm **Legion Remote** appears alongside existing plugins.
+- Install the release ZIP and confirm **Decky Remote** appears alongside existing plugins.
 - Confirm a fresh load says **Remote input is off** and the port is closed until enabled.
 - Enable input. Verify no /dev/uinput error appears, the correct Wi-Fi address is displayed, and the eight-digit code appears.
 - On the laptop open that address. Try an incorrect code, then the correct one. Confirm Decky displays the laptop's IP and hides the consumed code.

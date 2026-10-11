@@ -200,7 +200,7 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         return int(head.split(b" ")[1]), head, result
 
     async def test_real_http_pair_input_assets_and_unauthenticated_rejection(self):
-        for path, text in (("/",b"Legion Remote"),("/client.js",b"/api/pair"),("/style.css",b"#pad")):
+        for path, text in (("/",b"Decky Remote"),("/client.js",b"/api/pair"),("/style.css",b"#pad")):
             code, head, body = await self.request(path)
             self.assertEqual(code,200)
             self.assertIn(text,body)
