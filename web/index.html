@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Decky Remote</title><link rel="stylesheet" href="/style.css"><script defer src="/client.js"></script>
+  <title>Decky Remote</title><link rel="stylesheet" href="/style.css"><script defer src="/files.js"></script><script defer src="/client.js"></script>
 </head>
 <body>
   <main>
@@ -14,7 +14,7 @@
       <p class="small">Keep both devices on the same trusted Wi-Fi. This local connection is unencrypted.</p>
     </section>
     <div id="controller" hidden>
-      <nav class="tabs" role="tablist" aria-label="Remote tools"><button id="remoteTab" role="tab" aria-selected="true" aria-controls="remotePane">Control</button><button id="textTab" role="tab" aria-selected="false" aria-controls="textPane">Send text</button></nav>
+      <nav class="tabs" role="tablist" aria-label="Remote tools"><button id="remoteTab" role="tab" aria-selected="true" aria-controls="remotePane">Control</button><button id="textTab" role="tab" aria-selected="false" aria-controls="textPane">Send text</button><button id="filesTab" role="tab" aria-selected="false" aria-controls="filesPane">Files</button></nav>
       <section id="remotePane" role="tabpanel" aria-labelledby="remoteTab" class="card">
         <div class="control-heading"><h2>Keyboard & mouse</h2><button id="capture">Start control</button></div>
         <label for="mode">Control mode</label><select id="mode"><option value="mouse">Unlimited capture — Esc to release</option><option value="touchpad">Touchpad — drag to move</option></select>
@@ -30,6 +30,19 @@
       <section id="textPane" role="tabpanel" aria-labelledby="textTab" class="card" hidden>
         <h2>Send text</h2><label for="text">Select a text field on the handheld first</label><textarea id="text" rows="5" maxlength="128" placeholder="Type here, then send to the handheld…"></textarea>
         <p class="small">Up to 128 characters using a US English keyboard layout.</p><button id="sendText" class="wide">Send to handheld</button>
+      </section>
+      <section id="filesPane" role="tabpanel" aria-labelledby="filesTab" class="card" hidden>
+        <div class="control-heading"><h2>Share files</h2><button id="refreshFiles">Refresh</button></div>
+        <p class="small">Send files to the Legion or download shared files to this device. No Desktop Mode needed.</p>
+        <label for="sharedFolder">Shared folder on the Legion — select to copy its path</label>
+        <input id="sharedFolder" readonly value="" placeholder="Downloads/Decky Remote">
+        <p class="small">Use Dolphin to move existing files into this folder. Uploads with an existing name get a new name; your files are kept.</p>
+        <div id="fileDrop"><label for="fileInput">Choose files to upload, or drop them here</label><input id="fileInput" type="file" multiple><p class="small">Up to 2 GiB per file. Choose individual files; folders are not supported yet.</p></div>
+        <p id="fileStatus" role="status" aria-live="polite">Open Files after pairing to load the shared folder.</p>
+        <progress id="fileProgress" max="100" value="0" aria-label="Upload progress" hidden></progress>
+        <button id="cancelUpload" class="danger" hidden>Cancel upload</button>
+        <h3>Files on the Legion</h3><p id="fileCount" class="small"></p><div id="fileList"></div>
+        <p class="small">Files use the same unencrypted local connection. Share only on trusted Wi-Fi.</p>
       </section>
       <footer><span>Look at the handheld’s screen while controlling it.</span><button id="disconnect" class="danger">Disconnect</button></footer>
     </div>

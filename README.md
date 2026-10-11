@@ -1,24 +1,24 @@
-# Decky Remote 0.1.10
+# Decky Remote 0.1.11
 
-A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go S running SteamOS, with an action to open the system Dolphin file manager in Gaming Mode. Both devices connect to the same trusted private LAN. Look at the handheld's screen while controlling it; the remote page sends input without screen mirroring.
+A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go S running SteamOS, with two-way file sharing and an action to open the system Dolphin file manager in Gaming Mode. Both devices connect to the same trusted private LAN. Look at the handheld's screen while controlling it; the remote page sends input without screen mirroring.
 
 **Status:** prototype built for SteamOS. Local tests use simulated input devices on Windows. Actual uinput delivery, SteamOS Gaming Mode and Legion Go S compatibility still need the hardware checks in [docs/TESTING.md](docs/TESTING.md).
 
 ## Install and connect
 
-[Download the installable ZIP](https://github.com/dv-89/decky-remote/releases/download/v0.1.10/decky-remote-0.1.10.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
+[Download the installable ZIP](https://github.com/dv-89/decky-remote/releases/download/v0.1.11/decky-remote-0.1.11.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
 
 ```text
-https://github.com/dv-89/decky-remote/releases/download/v0.1.10/decky-remote-0.1.10.zip
+https://github.com/dv-89/decky-remote/releases/download/v0.1.11/decky-remote-0.1.11.zip
 ```
 
 GitHub's **Download ZIP** button downloads source code, which is different from the installable plugin ZIP linked above.
 
 If you installed the earlier **Legion Remote** build, stop its remote input service and uninstall it through Decky before installing **Decky Remote**. The renamed package uses a different plugin folder; leaving the old copy enabled can occupy the same network port.
 
-To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.10 ZIP over the existing plugin, enable input again, reload the controller page and pair with the new code.
+To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.11 ZIP over the existing plugin, enable input again, reload the controller page and pair with the new code. You do not need to uninstall Decky Remote first.
 
-1. Transfer `release/decky-remote-0.1.10.zip` to the handheld using a USB drive or your usual file-transfer tool.
+1. Transfer `release/decky-remote-0.1.11.zip` to the handheld using a USB drive or your usual file-transfer tool.
 2. In Decky's settings, enable Developer mode and select **Install Plugin from ZIP File**. Choose this ZIP. Menu wording may differ by Decky version. The ZIP's root folder is `decky-remote/`; it is a separate installation from Legion Library.
 3. Connect the laptop and handheld to the same trusted private Wi-Fi or LAN.
 4. Open **Decky → Decky Remote → Enable remote input** on the Legion.
@@ -41,7 +41,18 @@ Open **Decky → Decky Remote → Open Dolphin**. This launches the installed KD
 - The shortcut remains useful after plugin uninstall. Remove **Dolphin (Decky Remote)** from Steam's non-Steam library if you no longer want it. If an earlier version already created extra entries, confirm the updated button works before removing the extras through Steam. The plugin reuses an existing entry without automatically deleting old duplicates.
 - Dolphin's window, dialogs, clipboard and Steam focus still need testing on the Legion. Launching an app through Steam does not give Dolphin native gamepad navigation; use touchscreen or remote mouse input, or set a mouse/keyboard controller layout in Steam.
 
-The previous custom Files page and its file-copy RPCs have been removed. The LAN controller has no file-management or app-launch endpoint.
+The previous general-purpose Decky file browser remains removed. Dolphin handles file management; the browser's Files tab exchanges files only within the dedicated shared folder below. The LAN controller cannot launch apps.
+
+## Share files in both directions
+
+After pairing, select **Files** in the laptop/phone browser. Opening this tab pauses remote control so file selection stays on the laptop. No laptop app or Desktop Mode is required.
+
+- **Laptop/phone → Legion:** choose one or more individual files, or drop them into the upload area. Uploads show progress and can be cancelled. Files are saved in **Downloads/Decky Remote** under the Steam user's home. Existing files are never overwritten: repeated names receive a suffix such as `photo (2).jpg`.
+- **Legion → laptop/phone:** open Dolphin in Gaming Mode, move or copy the desired files into that shared folder, then select **Refresh** in the browser and **Download** beside a file. Your browser handles download progress and the destination folder.
+- Select the displayed folder path to copy it, then use **Ctrl+L** in Dolphin to paste the path. Use Dolphin to move uploaded files elsewhere, remove shared files, or work with directories.
+- The limit is **2 GiB per file**, one upload at a time. Folder transfers, recursive browsing, hidden files and symlinks are excluded. Up to 500 readable regular files owned by the Steam user are displayed; move files out with Dolphin if the list reaches that limit.
+- Pairing is required for both directions. Downloads use short-lived, single-use links bound to the current session and laptop IP. Uploads are sent in bounded chunks; cancelling, disconnecting or an idle upload timeout removes its temporary file. Completed files remain after stopping, upgrading or uninstalling the plugin. An abrupt system crash may leave a hidden `.decky-remote-*.part` file that can be removed with Dolphin.
+- Files use the existing **unencrypted HTTP** connection. Use trusted Wi-Fi; HTTPS remains a future change.
 
 ## Input and connection limits
 
@@ -61,10 +72,16 @@ The plugin manifest requests Decky's `root` flag to open `/dev/uinput`. It creat
 
 The laptop page and input API are served over **unencrypted HTTP** on the handheld. Use only a trusted private network. Avoid entering passwords or other sensitive information through this prototype. The code and session token protect pairing but do not encrypt network traffic; a network observer could capture them. Do not expose this port through a router or public proxy.
 
-Pairing uses a random single-use eight-digit code and a random 256-bit session token kept in browser memory. Tokens are also bound to the laptop's source IP. Pairing is limited to five attempts per minute across all clients. Exact Host/Origin checks, JSON-only POST requests, blocked cross-site requests and a restrictive content security policy reduce browser-based misuse. The API accepts only validated, size-limited input events and text; it has no file access or command execution endpoint. Dolphin launch metadata is available through local Decky RPC; the LAN API cannot start apps or browse files. HTTP requests have a five-second deadline and connections are capped at sixteen.
+Pairing uses a random single-use eight-digit code and a random 256-bit session token kept in browser memory. Tokens are also bound to the laptop's source IP. Pairing is limited to five attempts per minute across all clients. Exact Host/Origin checks, blocked cross-site requests and a restrictive content security policy reduce browser-based misuse. The API accepts validated, size-limited input/text and authenticated file operations confined to `Downloads/Decky Remote`. JSON metadata is limited to 8 KiB and binary upload chunks to 256 KiB. File paths cannot be supplied: the backend opens the shared folder by descriptor, rejects symlink folders/files, and checks ownership and file type. Newly uploaded files belong to the Steam user with mode 0600. The LAN API cannot run commands or start apps; Dolphin launch metadata is available only through local Decky RPC. Requests have a five-second deadline and connections are capped at sixteen; downloads stream with bounded buffers and a ten-second deadline per write, for up to one hour while paired.
 
 The device controls when the service runs. Uninstall through Decky's plugin settings to remove it. No persistent input service, background laptop helper or system configuration needs to be undone. The Dolphin non-Steam shortcut can be removed separately through Steam.
 
+
+## Changes in 0.1.11
+
+- Add a mobile-friendly Files tab for uploads to the Legion and downloads back to the laptop/phone, using the existing pairing session.
+- Keep transfers within the Steam user's `Downloads/Decky Remote` folder, with progress, cancellation, duplicate-name preservation and a 2 GiB per-file limit.
+- Stream downloads through temporary links; reject arbitrary paths, symlinks and non-regular files. Keep the browser-only controls and Dolphin launcher.
 
 ## Changes in 0.1.10
 
@@ -136,6 +153,7 @@ npm ci
 npm run typecheck
 npm test
 npm run test:client
+npm run test:files
 npm run test:dolphin
 npm run build
 npm run test:bundle
@@ -144,7 +162,7 @@ npm run package
 
 This plugin has its own manifest, source, backend and package. The archive includes rebuildable source and the bundled Decky API notices. It excludes tests, caches, `node_modules` and other plugins.
 
-For a laptop-only browser demo, run `python scripts/preview.py` and open `http://127.0.0.1:8766`. The initial demo code is `12345678`. All input is discarded; this does not connect to or control the handheld or laptop. After disconnecting, restart the demo for the initial code. Ctrl+C stops it.
+For a laptop-only browser demo, run `python scripts/preview.py` and open `http://127.0.0.1:8766`. The initial demo code is `12345678`. All input is discarded; this does not connect to or control the handheld or laptop. Linux/WSL previews support real file transfers in a disposable folder removed on clean exit; Windows previews show Files as unavailable because the production filesystem code uses Linux APIs. Run filesystem tests on Linux/WSL. After disconnecting, restart the demo for the initial code. Ctrl+C stops it.
 
 ## Automated releases
 
@@ -152,15 +170,15 @@ For a laptop-only browser demo, run `python scripts/preview.py` and open `http:/
 
 For a release from GitHub's website:
 
-1. Update the version in `package.json` and both root version fields in `package-lock.json` (or use `npm version 0.1.10 --no-git-tag-version`), and the versioned download links in this README. Commit and push the changes, along with any new code and release documentation.
+1. Update the version in `package.json` and both root version fields in `package-lock.json` (or use `npm version 0.1.11 --no-git-tag-version`), and the versioned download links in this README. Commit and push the changes, along with any new code and release documentation.
 2. Open **Actions → Build and release → Run workflow**, choose the branch, leave **Publish the package version as a GitHub release** checked, and run it. The workflow creates the matching version tag if needed and publishes the ZIP and `.sha256` after all checks pass. Uncheck Publish to test the build without releasing.
 3. Open the new release and copy the link to `decky-remote-<version>.zip` for Decky's URL installer. It uses `/releases/download/v<version>/decky-remote-<version>.zip`.
 
 Alternatively, after committing the new version, push a matching tag:
 
 ```powershell
-git tag v0.1.10
-git push origin v0.1.10
+git tag v0.1.11
+git push origin v0.1.11
 ```
 
 Tag pushes publish automatically. Regular pushes to `main` and pull requests only validate/build and save downloadable workflow artifacts. `0.x` versions and versions containing a prerelease suffix are marked **Pre-release**; stable `1.x` and later versions are published as regular releases. Titles and change notes are generated automatically.

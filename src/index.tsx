@@ -47,6 +47,7 @@ function RemotePanel() {
     <PanelSectionRow><div style={{ fontSize: 13, lineHeight: 1.6 }}>
       {status?.enabled ? (status.paired ? `Connected: ${status.client}` : "Ready to pair") : "Remote input is off"}
       <p>Keep both devices on the same trusted Wi-Fi. Look at the handheld’s screen while controlling it.</p>
+      <p>The browser’s Files tab uploads and downloads files in Downloads/Decky Remote. Open that folder in Dolphin to move files elsewhere.</p>
       {status?.enabled && <>
         <p>On your laptop, open:</p>
         {status.urls.map(url => <div key={url} style={{ overflowWrap: "anywhere", fontWeight: 600 }}>{url}</div>)}

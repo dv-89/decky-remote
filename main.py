@@ -3,11 +3,12 @@ from pathlib import Path
 import decky
 from remote_server import RemoteServer
 from dolphin import launch_info
+from file_share import FileShare
 
 
 class Plugin:
     async def _main(self):
-        self.remote = RemoteServer(Path(__file__).resolve().parent / "web")
+        self.remote = RemoteServer(Path(__file__).resolve().parent / "web", files=FileShare(decky.DECKY_USER_HOME))
         decky.logger.info("Decky Remote loaded; LAN input is off")
 
     async def get_status(self):

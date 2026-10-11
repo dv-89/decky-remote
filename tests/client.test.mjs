@@ -26,7 +26,7 @@ function harness({pointerLock="promise", mode="mouse", coarse=false}={}) {
       return pointerLock==="legacy" ? undefined : notification;
     }
   }
-  const ids=["pad","padTitle","padHint","mode","status","capture","captureHint","controller","pairPanel","pin","pairButton","pairForm","showDesktop","text","sendText","disconnect","remoteTab","textTab","remotePane","textPane"];
+  const ids=["pad","padTitle","padHint","mode","status","capture","captureHint","controller","pairPanel","pin","pairButton","pairForm","showDesktop","text","sendText","disconnect","remoteTab","textTab","filesTab","remotePane","textPane","filesPane"];
   const elements=Object.fromEntries(ids.map(id=>[id,new Element(id)]));
   elements.mode.value=mode;
   if(pointerLock==="unsupported")elements.pad.requestPointerLock=undefined;
@@ -201,6 +201,11 @@ test("mobile chooses touchpad and changing tools pauses input before text entry"
   assert.equal(h.elements.textTab["aria-selected"],"true");
   const count=h.calls.length;await h.doc.emit("keydown",{code:"KeyA"});await h.flush();assert.equal(h.calls.length,count);
   await h.elements.remoteTab.emit("click");assert.equal(h.elements.textPane.hidden,true);
+  await h.elements.capture.emit("click");await h.doc.emit("keydown",{code:"KeyA"});
+  await h.elements.filesTab.emit("click");await h.flush();
+  assert.equal(h.elements.filesPane.hidden,false);assert.equal(h.elements.remotePane.hidden,true);
+  assert.equal(h.elements.capture.textContent,"Start control");
+  assert.deepEqual(h.calls.at(-1).data.events,[{type:"release"}]);
 });
 
 test("horizontal and diagonal scrolling forwards both axes in full control and touchpad modes",async()=>{

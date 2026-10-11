@@ -12,6 +12,20 @@ For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and t
 
 For 0.1.2, TypeScript typecheck, Rollup build and the compiled-plugin check passed. All 16 Python backend/protocol/HTTP checks and 10 browser-client checks passed, including horizontal/diagonal scrolling, pixel/line/page units, fractional deltas, axis limits, pause resets, HTTP delivery and packed Linux horizontal-wheel events. Real horizontal scrolling on the handheld remains pending device validation.
 
+## Version 0.1.11
+
+Bidirectional transfers use a dedicated `Downloads/Decky Remote` folder. Linux filesystem tests cover byte-for-byte chunked uploads/downloads, SHA-256, zero-byte and Unicode files, duplicate-name preservation, owner permissions, path/hidden/control/invalid-Unicode rejection, symlinks, FIFOs, replaced temporary files, wrong offsets, incomplete uploads, idle/cancel/reset cleanup, download ticket limits/expiry/IP/token/reuse/replacement, bounded listings, low disk space and short writes. Real HTTP tests cover streamed downloads and their headers, authorization before body reads and folder access, cross-origin/cross-site rejection, chunk limits, disconnect cleanup and disk errors leaving input usable.
+
+Eight browser Files tests cover multi-file uploads, safe filename rendering, download links, oversize/folder rejection, lost begin responses, partial failures, cancellation and stale-session replies. The existing client tests also verify that switching to Files pauses control and discards queued presses. The WSL preview successfully uploaded and downloaded the public LICENSE file through the real browser; the downloaded bytes matched the source. Files fits at 320 and 390 px without horizontal page overflow. [Mobile Files preview](file-sharing.png) uses a disposable preview folder, not the Legion's actual home.
+
+All 38 Linux Python tests and 53 Node tests (16 client, 8 Files, 28 Dolphin, 1 bundle) pass, alongside TypeScript, Rollup and archive verification. Transfers on the Legion remain pending hardware confirmation:
+
+- Install over the old version, reload the browser and pair. Open Files and confirm the displayed path is inside your Steam user's home.
+- Upload a small disposable file, a multi-chunk file, an empty file and a filename with Unicode. Open Dolphin in Gaming Mode and check their contents and ordinary user ownership.
+- Upload a repeated name and confirm both files remain. Cancel a transfer, disconnect during one, and stop/reload the plugin during one; unfinished files should not appear in the download list.
+- Copy a file into the folder with Dolphin, refresh and download it; compare bytes or SHA-256 on both devices. Check browser save prompts on desktop and mobile. Download progress belongs to the browser.
+- Try capture again after file transfers. Backspace, Escape, scrolling, Send text and Dolphin launch should retain their previous behavior.
+
 ## Version 0.1.10
 
 Physical Backspace sends one Escape down/up pulse per press while remote control stays active. Holding it does not repeat Steam Back. Shift + Backspace forwards the Backspace key and its repeat events. Each physical press retains its chosen mapping until keyup; pause, focus loss, hiding or a tool change clears that mapping and releases held input. Physical Escape still pauses immediately, and Send text editing stays local.

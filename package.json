@@ -1,7 +1,7 @@
 {
   "name": "decky-remote",
-  "version": "0.1.10",
-  "description": "Laptop keyboard and mouse for SteamOS through a paired local browser",
+  "version": "0.1.11",
+  "description": "Browser keyboard, mouse and file sharing for SteamOS",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "python -m unittest discover -s tests -v",
     "test:client": "node --test tests/client.test.mjs",
+    "test:files": "node --test tests/files.test.mjs",
     "test:bundle": "node --test tests/bundle.test.mjs",
     "package": "python scripts/package.py",
     "test:dolphin": "node --test tests/dolphin.test.mjs"

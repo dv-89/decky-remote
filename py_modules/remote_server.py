@@ -4,11 +4,15 @@ from collections import deque
 import contextlib
 import ipaddress
 import json
+import os
 from pathlib import Path
 import secrets
 import socket
 import sys
 import time
+from urllib.parse import quote
+
+from file_share import CHUNK, TransferError
 
 from remote_input import UInput, TEXT_KEYS, validate_event
 
@@ -47,8 +51,14 @@ class HTTPError(Exception):
         self.status, self.message = status, message
 
 
+class Download:
+    def __init__(self, descriptor, name, size, token, peer):
+        self.descriptor, self.name, self.size = descriptor, name, size
+        self.token, self.peer = token, peer
+
+
 class RemoteServer:
-    def __init__(self, web_dir, input_factory=UInput, clock=time.monotonic):
+    def __init__(self, web_dir, input_factory=UInput, clock=time.monotonic, files=None):
         self.web_dir = Path(web_dir)
         self.input_factory, self.clock = input_factory, clock
         self.server = self.input = self.watchdog = None
@@ -61,6 +71,7 @@ class RemoteServer:
         self.urls = []
         self.lock = asyncio.Lock()
         self.port = PORT
+        self.files = files
 
     def status(self):
         return {"enabled": self.server is not None, "paired": bool(self.token),
@@ -98,6 +109,9 @@ class RemoteServer:
 
     def _revoke(self):
         self.token = self.peer = ""
+        if self.files:
+            with contextlib.suppress(OSError):
+                self.files.reset()
         self.pin = f"{secrets.randbelow(100_000_000):08d}"
         self.requests.clear()
         if self.input:
@@ -106,6 +120,9 @@ class RemoteServer:
     def _input_failed(self, error):
         self.error = f"Input device failed: {error}. Stop remote input and enable it again."
         self.token = self.peer = self.pin = ""
+        if self.files:
+            with contextlib.suppress(OSError):
+                self.files.reset()
         if self.input:
             with contextlib.suppress(OSError):
                 self.input.close()
@@ -143,6 +160,9 @@ class RemoteServer:
                     self.error = f"Input cleanup failed: {error}"
                 self.input = None
             self.token = self.peer = self.pin = ""
+            if self.files:
+                with contextlib.suppress(OSError):
+                    self.files.reset()
             self.urls = []
             return self.status()
 
@@ -159,6 +179,41 @@ class RemoteServer:
         now = self.clock()
         if self.token and (now - self.last_seen > 3 or now - self.paired_at > 3600):
             self._revoke()
+        if self.files:
+            with contextlib.suppress(OSError):
+                self.files.expire()
+
+    def _authorize(self, peer, authorization):
+        self.expire()
+        if not self.token or peer != self.peer or not secrets.compare_digest(authorization, "Bearer " + self.token):
+            raise HTTPError(401, "Session ended; pair again using the code in Decky")
+
+    def file_request(self, action, data, peer, authorization):
+        self._authorize(peer, authorization)
+        if not self.files:
+            raise HTTPError(503, "File sharing is unavailable in this preview")
+        try:
+            if action == "list" and not data:
+                result = self.files.listing()
+            elif action == "begin":
+                result = self.files.begin(data)
+            elif action == "finish":
+                result = self.files.finish(data)
+            elif action == "cancel":
+                result = self.files.cancel(data)
+            elif action == "download":
+                result = self.files.grant(data, self.token, peer)
+            else:
+                raise HTTPError(400, "Unsupported file request")
+        except TransferError as error:
+            raise HTTPError(error.status, error.message) from error
+        except OSError as error:
+            if action in ("begin", "finish"):
+                with contextlib.suppress(OSError):
+                    self.files.cancel()
+            raise HTTPError(507, "File operation failed; check the shared folder's permissions and free space") from error
+        self.last_seen = self.clock()
+        return result
 
     def dispatch(self, path, data, peer, authorization):
         if self.input is None:
@@ -218,10 +273,17 @@ class RemoteServer:
             writer.close()
             return
         self.clients.add(task)
+        download = None
         try:
             async with asyncio.timeout(5):
-                status, content_type, payload = await self._request(reader, writer)
-                await self._respond(writer, status, content_type, payload)
+                response = await self._request(reader, writer)
+            if isinstance(response, Download):
+                download = response
+                async with asyncio.timeout(3600):
+                    await self._download(writer, download)
+            else:
+                async with asyncio.timeout(5):
+                    await self._respond(writer, *response)
         except HTTPError as error:
             with contextlib.suppress(OSError):
                 await self._respond(writer, error.status, "application/json", json.dumps({"error": error.message}).encode())
@@ -235,6 +297,8 @@ class RemoteServer:
         except TimeoutError:
             pass
         finally:
+            if download:
+                os.close(download.descriptor)
             writer.close()
             with contextlib.suppress(OSError):
                 await writer.wait_closed()
@@ -262,23 +326,67 @@ class RemoteServer:
             raise HTTPError(403, "Open the numeric IP address shown in Decky")
         if headers.get("sec-fetch-site") == "cross-site":
             raise HTTPError(403, "Cross-site requests are blocked")
+        if method == "GET" and path.startswith("/download/"):
+            ticket = path.removeprefix("/download/")
+            if len(ticket) != 48 or any(char not in "0123456789abcdef" for char in ticket):
+                raise HTTPError(404, "Download not found")
+            async with self.lock:
+                self.expire()
+                if not self.server or not self.files:
+                    raise HTTPError(401, "Pair before downloading files")
+                try:
+                    descriptor, name, size = self.files.download(ticket, self.token, peer)
+                except TransferError as error:
+                    raise HTTPError(error.status, error.message) from error
+                self.last_seen = self.clock()
+                return Download(descriptor, name, size, self.token, peer)
         assets = {"/": ("index.html", "text/html; charset=utf-8"),
                   "/client.js": ("client.js", "text/javascript; charset=utf-8"),
+                  "/files.js": ("files.js", "text/javascript; charset=utf-8"),
                   "/style.css": ("style.css", "text/css; charset=utf-8")}
         if method == "GET" and path in assets:
             name, content_type = assets[path]
             return 200, content_type, (self.web_dir / name).read_bytes()
-        if method != "POST" or path not in ("/api/pair", "/api/events", "/api/text", "/api/heartbeat", "/api/disconnect"):
+        file_actions = {"/api/files/" + name: name for name in ("list", "begin", "chunk", "finish", "cancel", "download")}
+        if method != "POST" or path not in ("/api/pair", "/api/events", "/api/text", "/api/heartbeat", "/api/disconnect", *file_actions):
             raise HTTPError(404, "Not found")
-        if headers.get("origin") != "http://" + host or headers.get("content-type") != "application/json":
+        chunk = path == "/api/files/chunk"
+        if headers.get("origin") != "http://" + host or headers.get("content-type") != ("application/octet-stream" if chunk else "application/json"):
             raise HTTPError(403, "Use the controller page served by this handheld")
         length = headers.get("content-length", "")
-        if not length.isascii() or not length.isdigit() or not 1 <= int(length) <= 8192:
+        if not length.isascii() or not length.isdigit() or not 1 <= int(length) <= (CHUNK if chunk else 8192):
             raise HTTPError(413, "Invalid request length")
+        if path in file_actions:
+            # Authenticate before reading a file body or touching the filesystem.
+            self._authorize(peer, headers.get("authorization", ""))
+        if chunk:
+            offset = headers.get("x-upload-offset", "")
+            if not offset.isascii() or not offset.isdigit() or len(offset) > 12:
+                raise HTTPError(400, "Invalid upload offset")
+            payload = await reader.readexactly(int(length))
+            async with self.lock:
+                self._authorize(peer, headers.get("authorization", ""))
+                if not self.server or not self.files:
+                    raise HTTPError(503, "File sharing is unavailable")
+                try:
+                    result = self.files.append(headers.get("x-upload-id", ""), int(offset), payload)
+                except TransferError as error:
+                    raise HTTPError(error.status, error.message) from error
+                except OSError as error:
+                    with contextlib.suppress(OSError):
+                        self.files.cancel()
+                    raise HTTPError(507, "Upload failed; check free space and send the file again") from error
+                self.last_seen = self.clock()
+            return 200, "application/json", json.dumps(result).encode()
         data = json.loads(await reader.readexactly(int(length)))
         async with self.lock:
             if not self.server:
                 raise HTTPError(503, "Remote input is stopped")
+            if path in file_actions:
+                if not isinstance(data, dict):
+                    raise HTTPError(400, "Expected a JSON object")
+                result = self.file_request(file_actions[path], data, peer, headers.get("authorization", ""))
+                return 200, "application/json", json.dumps(result).encode()
             try:
                 result = self.dispatch(path, data, peer, headers.get("authorization", ""))
             except ValueError as error:
@@ -289,10 +397,31 @@ class RemoteServer:
         return 200, "application/json", json.dumps(result).encode()
 
     async def _respond(self, writer, status, content_type, payload):
-        phrases = {200: "OK", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 409: "Conflict", 413: "Payload Too Large", 429: "Too Many Requests", 503: "Service Unavailable"}
+        phrases = {200: "OK", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 409: "Conflict", 413: "Payload Too Large", 429: "Too Many Requests", 503: "Service Unavailable", 507: "Insufficient Storage"}
         headers = (f"HTTP/1.1 {status} {phrases[status]}\r\nContent-Type: {content_type}\r\n"
                    f"Content-Length: {len(payload)}\r\nConnection: close\r\nCache-Control: no-store\r\n"
                    "X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n"
                    "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n\r\n")
         writer.write(headers.encode() + payload)
         await writer.drain()
+
+    async def _download(self, writer, download):
+        headers = ("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
+                   f"Content-Length: {download.size}\r\nContent-Disposition: attachment; filename=\"download\"; filename*=UTF-8''{quote(download.name, safe='')}\r\n"
+                   "Connection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n"
+                   "Referrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'\r\n\r\n")
+        writer.write(headers.encode("ascii"))
+        remaining = download.size
+        while remaining:
+            if download.token != self.token or download.peer != self.peer or not self.server:
+                return
+            chunk = os.read(download.descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                return
+            writer.write(chunk)
+            remaining -= len(chunk)
+            async with asyncio.timeout(10):
+                await writer.drain()
+            await asyncio.sleep(0)
+        async with asyncio.timeout(10):
+            await writer.drain()

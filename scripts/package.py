@@ -7,6 +7,7 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 version = json.loads((root / "package.json").read_text(encoding="utf-8"))["version"]
 files = ["main.py", "plugin.json", "package.json", "package-lock.json", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "rollup.config.js", "tsconfig.json", "dist/index.js", "dist/index.js.map", "scripts/package.py", "scripts/preview.py", "docs/TESTING.md", "docs/laptop-controller.png", "docs/mobile-controller.png"]
+files.append("docs/file-sharing.png")
 files += [path.relative_to(root).as_posix() for folder in ("src", "web", "py_modules", "third_party") for path in sorted((root / folder).rglob("*")) if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"]
 for name in files:
     if not (root / name).is_file():

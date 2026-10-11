@@ -2,10 +2,12 @@
 import asyncio
 from pathlib import Path
 import sys
+import tempfile
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "py_modules"))
 from remote_server import RemoteServer
+from file_share import FileShare
 
 
 class PreviewInput:
@@ -23,17 +25,21 @@ class PreviewInput:
 
 
 async def main():
-    server = RemoteServer(root / "web", PreviewInput)
+    temporary = tempfile.TemporaryDirectory()
+    files = FileShare(temporary.name) if sys.platform == "linux" else None
+    server = RemoteServer(root / "web", PreviewInput, files=files)
     await server.start("127.0.0.1", 8766)
     if not server.server:
         raise RuntimeError(server.error)
     server.pin = "12345678"
     print("Simulated input demo: http://127.0.0.1:8766  Pairing code: 12345678", flush=True)
     print("No real keyboard or mouse events are emitted. Ctrl+C stops the demo.", flush=True)
+    print("On Linux, Files uses a disposable folder deleted when the demo exits.", flush=True)
     try:
         await asyncio.Event().wait()
     finally:
         await server.stop()
+        temporary.cleanup()
 
 
 if __name__ == "__main__":

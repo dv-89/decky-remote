@@ -5,6 +5,7 @@ let token = "", active = false, events = [], flushing = false, pairing = false;
 let serial = Promise.resolve(), drag = null, wheel = 0, wheelX = 0;
 let lockPending = false, lockTimer = null, captureRequest = 0;
 let backspaceKey = null;
+let fileSharing = null;
 el("mode").value = window.matchMedia?.("(pointer: coarse)").matches ? "touchpad" : "mouse";
 const supported = new Set([
   ...Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ", letter => "Key" + letter),
@@ -84,6 +85,7 @@ async function startControl() {
 }
 function ended(message) {
   token = ""; events = []; setCapture(false);
+  fileSharing?.reset();
   el("controller").hidden = true; el("pairPanel").hidden = false;
   status(message, true);
 }
@@ -112,6 +114,31 @@ function api(path, data, {fatal = true, keepalive = false} = {}) {
   serial = result.catch(() => {});
   return result;
 }
+async function fileRequest(path, data, {signal, body, headers = {"Content-Type":"application/json"}} = {}) {
+  const credential = token;
+  if (!credential) throw new Error("Pair with the Legion before sharing files");
+  const timeout = new AbortController();
+  const abort = () => timeout.abort();
+  signal?.addEventListener("abort", abort, {once: true});
+  if (signal?.aborted) timeout.abort();
+  const timer = setTimeout(abort, 15000);
+  try {
+    const response = await fetch(path, {method:"POST", credentials:"omit", cache:"no-store",
+      headers:{...headers, Authorization:"Bearer " + credential},
+      body:body ?? JSON.stringify(data), signal:timeout.signal});
+    const result = await response.json();
+    if (credential !== token) throw new Error("Session changed; pair again before sharing files");
+    if (!response.ok) {
+      if (response.status === 401) ended(result.error || "Session ended; pair again in Decky.");
+      throw new Error(result.error || "File transfer failed");
+    }
+    return result;
+  } catch (error) {
+    if (error.name === "AbortError" && !signal?.aborted) throw new Error("File request timed out. Check Wi-Fi and try again.");
+    throw error;
+  } finally { clearTimeout(timer); signal?.removeEventListener("abort", abort); }
+}
+if (window.createFileSharing) fileSharing = window.createFileSharing({request:fileRequest, paired:() => !!token});
 function queue(event) {
   if (!token) return;
   if (events.length >= 256) { setCapture(false); status("Input paused because the connection is too slow.", true); return; }
@@ -199,6 +226,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 window.addEventListener("pagehide", () => {
+  fileSharing?.reset();
   if (token) void api("/api/disconnect", {}, {keepalive:true}).catch(() => {});
 });
 
@@ -291,11 +319,12 @@ el("disconnect").addEventListener("click", async () => {
   try { await api("/api/disconnect", {}); } catch {}
   ended("Disconnected. Pair again using the new code in Decky.");
 });
-for (const name of ["remote", "text"]) el(name + "Tab").addEventListener("click", () => {
+for (const name of ["remote", "text", "files"]) el(name + "Tab").addEventListener("click", () => {
   if (active || lockPending) pauseControl();
-  for (const pane of ["remote", "text"]) {
+  for (const pane of ["remote", "text", "files"]) {
     el(pane + "Pane").hidden = pane !== name;
     el(pane + "Tab").setAttribute("aria-selected", String(pane === name));
   }
+  if (name === "files") void fileSharing?.refresh();
 });
 renderCapture();

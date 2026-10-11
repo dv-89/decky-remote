@@ -10,6 +10,6 @@
       "utility",
       "input"
     ],
-    "description": "Control SteamOS from a paired browser and open the system Dolphin file manager in Gaming Mode."
+    "description": "Control SteamOS, upload and download shared files from a paired browser, and open Dolphin in Gaming Mode."
   }
 }
