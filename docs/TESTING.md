@@ -12,6 +12,12 @@ For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and t
 
 For 0.1.2, TypeScript typecheck, Rollup build and the compiled-plugin check passed. All 16 Python backend/protocol/HTTP checks and 10 browser-client checks passed, including horizontal/diagonal scrolling, pixel/line/page units, fractional deltas, axis limits, pause resets, HTTP delivery and packed Linux horizontal-wheel events. Real horizontal scrolling on the handheld remains pending device validation.
 
+## Version 0.1.5
+
+The user reported the 0.1.4 launch-settings error on the handheld. Version 0.1.5 switches to the shortcut-specific options setter, loads details before setting options, refreshes stale snapshots, and removes the exact working-directory read-back requirement. A missing native shortcut-options field is accepted after the native setter and executable verification; an explicitly mismatching native value still blocks launch. Native IDs are unsigned, and the name is set explicitly for reuse.
+
+The Dolphin tests reproduce a no-op general setter, one-shot stale snapshots, delayed native options, omitted/normalized working directories, omitted native option metadata, signed IDs, ignored shortcut names, API fallback and a changed executable. TypeScript, Rollup, 23 Python checks and all 31 Node checks (13 client, 17 Dolphin, 1 bundle) pass locally. SteamOS window behavior still needs confirmation after the fix is installed.
+
 ## Version 0.1.4
 
 The custom file browser has been replaced with a fixed Dolphin launch descriptor and a Steam shortcut launcher. Local checks cover installed/missing executables, home validation, creation, reuse after reload, overlapping clicks, account changes, same-name foreign shortcuts, full 64-bit game IDs, settings confirmation, registration cleanup and failed creation. They simulate Steam APIs; they do not establish that SteamOS displays Dolphin correctly. Existing remote-input checks remain applicable. The removed 0.1.3 file-copy tests are historical only.

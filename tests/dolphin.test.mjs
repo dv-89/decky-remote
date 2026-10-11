@@ -15,11 +15,13 @@ function setup() {
     async AddShortcut(title, exe, dir, options) {
       calls.push(["add", title, exe, dir, options]);
       const id = -123456789; // Steam can deliver signed app IDs.
-      shortcuts.set(id, { appid: id, display_name: title });
-      details.set(id, { strShortcutExe: exe }); return id;
+      shortcuts.set(id >>> 0, { appid: id >>> 0, display_name: title });
+      details.set(id >>> 0, { strShortcutExe: exe, strShortcutLaunchOptions: "" }); return id;
     },
+    SetShortcutName(id, title) { calls.push(["name", id, title]); shortcuts.get(id).display_name = title; },
     SetShortcutStartDir(id, dir) { calls.push(["dir", id, dir]); details.get(id).strShortcutStartDir = dir; },
-    SetAppLaunchOptions(id, options) { calls.push(["options", id, options]); details.get(id).strLaunchOptions = options; },
+    SetShortcutLaunchOptions(id, options) { calls.push(["options", id, options]); details.get(id).strShortcutLaunchOptions = options; },
+    SetAppLaunchOptions(id, options) { calls.push(["general-options", id, options]); details.get(id).strLaunchOptions = options; },
     RegisterForAppDetails(id, callback) { callback({}); callback(details.get(id)); const record = { unregister() { record.closed = true; } }; registrations.push(record); return record; },
     RunGame(...args) { calls.push(["run", ...args]); },
   } } };
@@ -29,11 +31,12 @@ function setup() {
 
 test("creates a native shortcut, saves settings before launch and uses a full unsigned game ID", async () => {
   const s = setup(); await s.open();
-  assert.deepEqual(s.calls.map(c => c[0]), ["add", "dir", "options", "close", "run"]);
+  assert.deepEqual(s.calls.map(c => c[0]), ["add", "name", "dir", "options", "close", "run"]);
   assert.deepEqual(s.calls[0], ["add", name, '"/usr/bin/dolphin"', "", ""]);
-  assert.deepEqual(s.calls[1].slice(2), ['"/home/deck"']);
-  assert.equal(s.calls[2][2], info.launch_options);
-  assert.deepEqual(s.calls[4].slice(1), [((BigInt(-123456789 >>> 0) << 32n) | 0x02000000n).toString(), "", -1, 100]);
+  assert.deepEqual(s.calls[2].slice(2), ['"/home/deck"']);
+  assert.equal(s.calls[2][1], -123456789 >>> 0, "Steam setters require an unsigned app ID");
+  assert.equal(s.calls[3][2], info.launch_options);
+  assert.deepEqual(s.calls[5].slice(1), [((BigInt(-123456789 >>> 0) << 32n) | 0x02000000n).toString(), "", -1, 100]);
   assert.ok(s.registrations.every(r => r.closed), "synchronous callbacks must unregister");
 });
 
@@ -81,8 +84,8 @@ test("failed shortcut creation never launches and can be retried", async () => {
 });
 
 test("unconfirmed launch settings never launch a potentially wrong app", async () => {
-  const s = setup(); s.host.SteamClient.Apps.SetAppLaunchOptions = () => {};
-  await assert.rejects(s.open(), /has not saved/);
+  const s = setup(); s.host.SteamClient.Apps.SetShortcutLaunchOptions = () => {};
+  await assert.rejects(s.open(), /has not applied/);
   assert.equal(s.calls.filter(c => c[0] === "run").length, 0);
   assert.ok(s.registrations.every(r => r.closed), "timeout must unregister");
 });
@@ -90,15 +93,15 @@ test("unconfirmed launch settings never launch a potentially wrong app", async (
 test("waits for asynchronously registered shortcuts before configuring or running", async () => {
   const s = setup(); const create = s.host.SteamClient.Apps.AddShortcut;
   s.host.SteamClient.Apps.AddShortcut = async (...args) => {
-    const id = await create(...args); const overview = s.shortcuts.get(id);
-    s.shortcuts.delete(id); setTimeout(() => s.shortcuts.set(id, overview), 50); return id;
+    const id = await create(...args); const overview = s.shortcuts.get(id >>> 0);
+    s.shortcuts.delete(id >>> 0); setTimeout(() => s.shortcuts.set(id >>> 0, overview), 50); return id;
   };
   await s.open(); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
 });
 
 test("supports asynchronous details and shortcut-specific launch-option fields", async () => {
   const s = setup();
-  s.host.SteamClient.Apps.SetAppLaunchOptions = (id, options) => {
+  s.host.SteamClient.Apps.SetShortcutLaunchOptions = (id, options) => {
     const details = s.details.get(id); details.strLaunchOptions = ""; details.strShortcutLaunchOptions = options;
   };
   s.host.SteamClient.Apps.RegisterForAppDetails = (id, callback) => {
@@ -109,4 +112,61 @@ test("supports asynchronous details and shortcut-specific launch-option fields",
   assert.equal(s.calls.filter(c => c[0] === "add").length, 1);
   assert.equal(s.calls.filter(c => c[0] === "run").length, 2);
   assert.ok(s.registrations.every(r => r.closed));
+});
+
+test("uses the native shortcut setter when the general app setter is a no-op", async () => {
+  const s = setup(); s.host.SteamClient.Apps.SetAppLaunchOptions = () => { throw new Error("wrong API"); };
+  await s.open(); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
+});
+
+test("loads details before writing and refreshes stale one-shot snapshots until native options arrive", async () => {
+  const s = setup(); let loaded = false, reads = 0, nativeOptions = "";
+  s.host.SteamClient.Apps.SetShortcutLaunchOptions = (id, options) => {
+    assert.ok(loaded, "Steam details must be loaded before writes"); nativeOptions = options;
+    // The registration that loaded the details receives no update event.
+  };
+  s.host.SteamClient.Apps.RegisterForAppDetails = (id, callback) => {
+    loaded = true; reads++;
+    callback({ strShortcutExe: s.details.get(id).strShortcutExe, strShortcutLaunchOptions: reads >= 4 ? nativeOptions : "" });
+    const record = { unregister() { record.closed = true; } }; s.registrations.push(record); return record;
+  };
+  await s.open(); assert.ok(reads >= 4); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
+  assert.ok(s.registrations.every(r => r.closed));
+});
+
+test("does not require an exact or present working-directory read-back", async () => {
+  for (const dir of [undefined, "", "/home/deck/"]) {
+    const s = setup(); s.host.SteamClient.Apps.SetShortcutStartDir = id => { s.details.get(id).strShortcutStartDir = dir; };
+    await s.open(); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
+  }
+});
+
+test("native setter remains usable when Steam omits the shortcut-options field", async () => {
+  const s = setup(); s.host.SteamClient.Apps.SetShortcutLaunchOptions = id => {
+    delete s.details.get(id).strShortcutLaunchOptions;
+    s.details.get(id).strLaunchOptions = ""; // The separate general property is not the shortcut's value.
+  };
+  await s.open(); assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
+});
+
+test("older Steam API falls back to general options and confirms its reported value", async () => {
+  const s = setup(); delete s.host.SteamClient.Apps.SetShortcutLaunchOptions;
+  await s.open(); assert.equal(s.calls.filter(c => c[0] === "general-options").length, 1);
+  assert.equal(s.calls.filter(c => c[0] === "run").length, 1);
+});
+
+test("a changed shortcut executable is never launched", async () => {
+  const s = setup(); s.host.SteamClient.Apps.SetShortcutLaunchOptions = id => { s.details.get(id).strShortcutExe = '"/usr/bin/foreign-app"'; };
+  await assert.rejects(s.open(), /target changed/);
+  assert.equal(s.calls.filter(c => c[0] === "run").length, 0);
+});
+
+test("sets the shortcut name explicitly when Steam ignores AddShortcut's name", async () => {
+  const s = setup(); const create = s.host.SteamClient.Apps.AddShortcut;
+  s.host.SteamClient.Apps.AddShortcut = async (...args) => {
+    const id = await create(...args); s.shortcuts.get(id >>> 0).display_name = "/usr/bin/dolphin"; return id;
+  };
+  await s.open(); await s.open();
+  assert.equal(s.calls.filter(c => c[0] === "add").length, 1);
+  assert.equal(s.shortcuts.values().next().value.display_name, name);
 });

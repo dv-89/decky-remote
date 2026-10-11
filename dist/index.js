@@ -25,6 +25,7 @@ const definePlugin = (fn) => {
 const NAME = "Dolphin (Decky Remote)";
 const unquote = (value = "") => value.replace(/^"|"$/g, "");
 const validId = (id) => Number.isInteger(id) && id !== 0 && id >= -2147483648 && id <= 4294967295;
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 function readDetails(host, id, accepts, timeout = 4000) {
     return new Promise((resolve, reject) => {
         let done = false;
@@ -52,6 +53,28 @@ function readDetails(host, id, accepts, timeout = 4000) {
         }
     });
 }
+async function waitForSettings(host, id, info, shortcutApi) {
+    const deadline = Date.now() + 4000;
+    do {
+        // Some Steam builds deliver a snapshot on registration but never notify
+        // that subscription when a Set* call finishes. Re-register to refresh it.
+        const details = await readDetails(host, id, value => Boolean(value.strShortcutExe), Math.min(750, deadline - Date.now()));
+        if (details) {
+            if (unquote(details.strShortcutExe) !== info.executable)
+                throw new Error("Dolphin's shortcut target changed. Reopen Decky and try again.");
+            if (details.strShortcutLaunchOptions === info.launch_options || details.strLaunchOptions === info.launch_options)
+                return true;
+            // The shortcut setter and general app setter store different properties.
+            // An absent shortcut field cannot disprove a successful native setter.
+            // An explicitly reported shortcut value must still match before launch.
+            if (shortcutApi && typeof details.strShortcutLaunchOptions !== "string")
+                return true;
+        }
+        if (Date.now() < deadline)
+            await delay(150);
+    } while (Date.now() < deadline);
+    return false;
+}
 function createDolphinLauncher(host, getInfo, closeMenus) {
     let pending;
     const launch = async () => {
@@ -68,11 +91,11 @@ function createDolphinLauncher(host, getInfo, closeMenus) {
         for (const overview of shortcuts.values()) {
             if (overview.display_name !== NAME || !validId(overview.appid))
                 continue;
-            const details = await readDetails(host, overview.appid, details => Boolean(details.strShortcutExe));
+            const details = await readDetails(host, overview.appid >>> 0, details => Boolean(details.strShortcutExe));
             if (!details)
                 throw new Error("Steam could not read the Dolphin shortcut. Reopen Decky and try again.");
             if (unquote(details.strShortcutExe) === info.executable) {
-                id = overview.appid;
+                id = overview.appid >>> 0;
                 break;
             }
         }
@@ -80,21 +103,32 @@ function createDolphinLauncher(host, getInfo, closeMenus) {
             id = await apps.AddShortcut(NAME, `"${info.executable}"`, "", "");
             if (!validId(id))
                 throw new Error("Steam could not create the Dolphin shortcut.");
+            id >>>= 0;
         }
         // Steam registers newly created shortcuts asynchronously. Wait before Set*.
         const deadline = Date.now() + 4000;
         while (!host.appStore.GetAppOverviewByAppID(id)) {
             if (Date.now() >= deadline)
                 throw new Error("Steam is still adding Dolphin. Try Open Dolphin again in a moment.");
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await delay(100);
         }
+        // Load the details first: Steam can ignore settings writes while a new
+        // shortcut's details are not yet initialized, even if its overview exists.
+        const initial = await readDetails(host, id, details => Boolean(details.strShortcutExe));
+        if (!initial || unquote(initial.strShortcutExe) !== info.executable)
+            throw new Error("Steam could not load Dolphin's shortcut. Reopen Decky and try again.");
+        // AddShortcut does not reliably apply its name argument on current Steam.
+        apps.SetShortcutName(id, NAME);
         apps.SetShortcutStartDir(id, `"${info.start_dir}"`);
-        apps.SetAppLaunchOptions(id, info.launch_options);
-        const ready = await readDetails(host, id, details => unquote(details.strShortcutExe) === info.executable &&
-            unquote(details.strShortcutStartDir) === info.start_dir &&
-            (details.strLaunchOptions === info.launch_options || details.strShortcutLaunchOptions === info.launch_options));
-        if (!ready)
-            throw new Error("Steam has not saved Dolphin's launch settings. Try Open Dolphin again.");
+        const shortcutApi = typeof apps.SetShortcutLaunchOptions === "function";
+        if (shortcutApi)
+            apps.SetShortcutLaunchOptions(id, info.launch_options);
+        else
+            apps.SetAppLaunchOptions(id, info.launch_options);
+        // The working directory is advisory for this absolute executable. Steam
+        // may omit it or normalize quotes/trailing slashes; do not block on it.
+        if (!await waitForSettings(host, id, info, shortcutApi))
+            throw new Error("Steam has not applied Dolphin's launch options. Restart Steam and try again.");
         closeMenus();
         // Non-Steam shortcuts require the full 64-bit game ID, not the 32-bit app ID.
         const gameId = ((BigInt(id >>> 0) << 32n) | 0x02000000n).toString();

@@ -1,4 +1,4 @@
-# Decky Remote 0.1.4
+# Decky Remote 0.1.5
 
 A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go S running SteamOS, with an action to open the system Dolphin file manager in Gaming Mode. Both devices connect to the same trusted private LAN. Look at the handheld's screen while controlling it; the remote page sends input without screen mirroring.
 
@@ -6,19 +6,19 @@ A Decky plugin that turns a laptop/mobile browser into controls for a Legion Go 
 
 ## Install and connect
 
-[Download the installable ZIP](https://github.com/dv-89/decky-remote/raw/refs/heads/main/release/decky-remote-0.1.4.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
+[Download the installable ZIP](https://github.com/dv-89/decky-remote/raw/refs/heads/main/release/decky-remote-0.1.5.zip). You can also paste the following address into Decky's **Install Plugin from URL**:
 
 ```text
-https://raw.githubusercontent.com/dv-89/decky-remote/main/release/decky-remote-0.1.4.zip
+https://raw.githubusercontent.com/dv-89/decky-remote/main/release/decky-remote-0.1.5.zip
 ```
 
 GitHub's **Download ZIP** button downloads source code, which is different from the installable plugin ZIP linked above.
 
 If you installed the earlier **Legion Remote** build, stop its remote input service and uninstall it through Decky before installing **Decky Remote**. The renamed package uses a different plugin folder; leaving the old copy enabled can occupy the same network port.
 
-To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.4 ZIP over the existing plugin, enable input again, reload the laptop/mobile controller page and pair with the new code.
+To upgrade an earlier Decky Remote build, stop remote input, install the 0.1.5 ZIP over the existing plugin, enable input again, reload the laptop/mobile controller page and pair with the new code.
 
-1. Transfer `release/decky-remote-0.1.4.zip` to the handheld using a USB drive or your usual file-transfer tool.
+1. Transfer `release/decky-remote-0.1.5.zip` to the handheld using a USB drive or your usual file-transfer tool.
 2. In Decky's settings, enable Developer mode and select **Install Plugin from ZIP File**. Choose this ZIP. Menu wording may differ by Decky version. The ZIP's root folder is `decky-remote/`; it is a separate installation from Legion Library.
 3. Connect the laptop and handheld to the same trusted private Wi-Fi or LAN.
 4. Open **Decky → Decky Remote → Enable remote input** on the Legion.
@@ -63,6 +63,12 @@ The laptop page and input API are served over **unencrypted HTTP** on the handhe
 Pairing uses a random single-use eight-digit code and a random 256-bit session token kept in browser memory. Tokens are also bound to the laptop's source IP. Pairing is limited to five attempts per minute across all clients. Exact Host/Origin checks, JSON-only POST requests, blocked cross-site requests and a restrictive content security policy reduce browser-based misuse. The API accepts only validated, size-limited input events and text; it has no file access or command execution endpoint. Dolphin launch metadata is available through local Decky RPC; the LAN API cannot start apps or browse files. HTTP requests have a five-second deadline and connections are capped at sixteen.
 
 The device controls when the service runs. Uninstall through Decky's plugin settings to remove it. No persistent input service, background laptop helper or system configuration needs to be undone. The Dolphin non-Steam shortcut can be removed separately through Steam.
+
+## Changes in 0.1.5
+
+- Fix the launcher reporting **Steam has not saved Dolphin's launch settings** on SteamOS. Load the details before writing, use Steam's shortcut-specific options API, and refresh snapshots to see delayed changes.
+- Stop requiring an exact working-directory read-back: Steam can omit or normalize it. If Steam omits the shortcut-options field, use the native setter without treating the separate general app property as a failure. Explicit shortcut values are still checked when reported, and the executable must remain Dolphin.
+- Normalize Steam app IDs to unsigned values for native calls and explicitly apply the shortcut name so repeat presses can reuse it when Steam ignores AddShortcut's name argument.
 
 ## Changes in 0.1.4
 
