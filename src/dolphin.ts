@@ -14,7 +14,7 @@ export type SteamHost = {
     RunGame(id: string, options: string, flag: number, source: number): void;
   } };
   appStore: { GetAppOverviewByAppID(id: number): Overview | null };
-  collectionStore: { deckDesktopApps: { apps: Map<number, Overview> } };
+  collectionStore: { deckDesktopApps: { apps: { keys(): Iterable<number> } } };
   App?: { m_CurrentUser?: { strSteamID?: string } };
   localStorage?: { getItem(key: string): string | null; setItem(key: string, value: string): void };
 };
@@ -56,7 +56,7 @@ export function createDolphinLauncher(host: SteamHost, getInfo: () => Promise<La
     if (!info.ok) throw new Error(info.error || "Cannot find Dolphin.");
     const apps = host.SteamClient?.Apps;
     const shortcuts = host.collectionStore?.deckDesktopApps?.apps;
-    if (!apps || !shortcuts || !host.appStore) throw new Error("Steam's library is not ready. Reopen Decky and try again.");
+    if (!apps || typeof shortcuts?.keys !== "function" || !host.appStore) throw new Error("Steam's library is not ready. Reopen Decky and try again.");
     const account = host.App?.m_CurrentUser?.strSteamID;
     const key = account && /^\d+$/.test(account) ? `decky-remote:dolphin:${account}` : undefined;
     const remember = (id: number) => {
@@ -66,14 +66,20 @@ export function createDolphinLauncher(host: SteamHost, getInfo: () => Promise<La
     try { if (key) remembered = Number(host.localStorage?.getItem(key)); } catch { /* Storage may be unavailable. */ }
     const candidates = new Map<number, { owned: boolean }>();
     if (validId(remembered) && host.appStore.GetAppOverviewByAppID(remembered >>> 0)) candidates.set(remembered >>> 0, { owned: true });
-    // Map keys are Steam's actual IDs. A partial overview need not repeat its
-    // appid field. Bindings are scoped to the signed-in Steam account.
-    for (const [appId, overview] of shortcuts) {
+    // Steam exposes an ID collection, not necessarily a Map of overviews.
+    // keys() works for its collection interface, Sets and Maps alike.
+    let unresolved = false;
+    for (const appId of shortcuts.keys()) {
       if (!validId(appId)) continue;
+      const overview = host.appStore.GetAppOverviewByAppID(appId >>> 0);
+      if (!overview) { unresolved = true; continue; }
       const named = overview.display_name === NAME;
       const pathName = targetPath(overview.display_name) === info.executable;
+      // Steam derived this malformed basename from pre-quoted paths in old
+      // builds when setup failed before SetShortcutName could run.
+      const legacyName = /^dolphin"+$/.test(overview.display_name);
       const possibleDolphin = /^(?:dolphin|Dolphin)$/.test(overview.display_name);
-      if (named || pathName || possibleDolphin) candidates.set(appId >>> 0, { owned: named || pathName || candidates.get(appId >>> 0)?.owned === true });
+      if (named || pathName || legacyName || possibleDolphin) candidates.set(appId >>> 0, { owned: named || pathName || legacyName || candidates.get(appId >>> 0)?.owned === true });
     }
     let id: number | undefined;
     for (const [candidate, identity] of candidates) {
@@ -83,6 +89,9 @@ export function createDolphinLauncher(host: SteamHost, getInfo: () => Promise<La
       if (target === info.executable || identity.owned) { id = candidate; break; }
     }
     if (id === undefined) {
+      // An unreadable existing entry might be ours; don't add a duplicate
+      // while Steam is still loading its non-Steam app overviews.
+      if (unresolved) throw new Error("Steam is still loading non-Steam apps. Try Open Dolphin again in a moment.");
       // Steam handles quoting; pre-quoted paths can become double-quoted.
       id = await apps.AddShortcut(NAME, info.executable, "", "");
       if (!validId(id)) throw new Error("Steam could not create the Dolphin shortcut.");

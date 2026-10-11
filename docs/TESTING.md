@@ -12,6 +12,14 @@ For 0.1.1, TypeScript typecheck, Rollup build, all 8 browser-client checks and t
 
 For 0.1.2, TypeScript typecheck, Rollup build and the compiled-plugin check passed. All 16 Python backend/protocol/HTTP checks and 10 browser-client checks passed, including horizontal/diagonal scrolling, pixel/line/page units, fractional deltas, axis limits, pause resets, HTTP delivery and packed Linux horizontal-wheel events. Real horizontal scrolling on the handheld remains pending device validation.
 
+## Version 0.1.7
+
+The user reported **.for is not iterable** from 0.1.6 and supplied a Steam shortcut photo showing the generated name `dolphin"`, a double-quoted target, an incomplete start directory and blank launch options. Version 0.1.6 mistakenly modeled the shortcut collection as iterable ID/overview pairs. The current [MoonDeck interface](https://github.com/FrogTheFrog/moondeck/blob/main/src/steam-utils/getCollectionStore.ts) exposes `apps.keys()` for IDs and `allApps` for overviews; it does not require pair iteration.
+
+Version 0.1.7 reads IDs via `keys()` and resolves overviews through Steam's app store. It recognizes the photographed legacy name, repairs its fields, and avoids new additions if existing overviews cannot yet be loaded. Eight added regression checks exercise ID Sets, keys-only collections without a direct iterator, creation/reload reuse, unsupported collection formats, missing overviews and the photographed shortcut with both reported and omitted target metadata, including a foreign-target rejection.
+
+TypeScript typecheck, Rollup, 23 Python checks and 42 Node checks (13 client, 28 Dolphin, 1 bundle) pass locally. The updated Decky button still needs confirmation on the handheld. Verify that it renames/repairs the photographed entry, opens Dolphin, and keeps the shortcut count unchanged after repeated presses and a plugin reload.
+
 ## Version 0.1.6
 
 The user confirmed that **Dolphin (Decky Remote)** appears in Steam's non-Steam library and that Steam's Play button opens the file manager. The plugin still reported a missing shortcut and appeared to add duplicates on repeated installs/opens. This narrows the failure to the plugin's shortcut discovery and metadata read-back; it does not establish acceptance of the updated Decky button.

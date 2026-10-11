@@ -56,6 +56,32 @@ test("repairs legacy double-quoted targets and reuses that shortcut", async () =
   assert.equal(s.calls.find(c => c[0] === "run")[1], ((42n << 32n) | 0x02000000n).toString());
 });
 
+test("repairs the photographed legacy dolphin-quote name, double-quoted target and blank options", async () => {
+  const s = setup(); s.seed(42, 'dolphin"', '""/usr/bin/dolphin""');
+  s.details.get(42).strShortcutStartDir = '"/usr/bin/';
+  s.details.get(42).strShortcutLaunchOptions = "";
+  s.host.collectionStore.deckDesktopApps.apps = new Set([42]);
+  await s.open(); await s.reload()();
+  assert.equal(count(s, "add"), 0); assert.equal(count(s, "run"), 2);
+  assert.equal(s.shortcuts.get(42).display_name, name);
+  assert.equal(s.details.get(42).strShortcutExe, '"/usr/bin/dolphin"');
+  assert.equal(s.details.get(42).strShortcutStartDir, '"/home/deck"');
+  assert.equal(s.details.get(42).strShortcutLaunchOptions, info.launch_options);
+});
+
+test("legacy generated name can be recovered when Steam omits target metadata", async () => {
+  const s = setup(); s.seed(42, 'dolphin"'); s.details.set(42, { strDisplayName: 'dolphin"' });
+  await s.open(); assert.equal(count(s, "add"), 0); assert.equal(count(s, "run"), 1);
+  assert.equal(s.shortcuts.get(42).display_name, name);
+});
+
+test("a legacy-looking name with an explicitly foreign executable is left unchanged", async () => {
+  const s = setup(); s.seed(42, 'dolphin"', '"/usr/bin/dolphin-emu"');
+  await s.open(); assert.equal(count(s, "add"), 1);
+  assert.equal(s.shortcuts.get(42).display_name, 'dolphin"');
+  assert.equal(s.details.get(42).strShortcutExe, '"/usr/bin/dolphin-emu"');
+});
+
 test("known working plugin shortcut launches even when Steam omits target/options metadata", async () => {
   const s = setup(); s.seed(42); s.details.set(42, { strDisplayName: name }); await s.open();
   assert.equal(count(s, "add"), 0); assert.equal(count(s, "run"), 1);
@@ -72,6 +98,47 @@ test("known plugin shortcut launches even when the details callback never arrive
 test("uses collection map IDs even if Steam omits overview.appid", async () => {
   const s = setup(); s.seed(42); delete s.shortcuts.get(42).appid; await s.open();
   assert.equal(count(s, "add"), 0); assert.equal(s.calls.find(c => c[0] === "exe")[1], 42);
+});
+
+test("Steam ID Sets reuse existing Dolphin without destructuring numeric entries", async () => {
+  const s = setup(); s.seed(42); s.seed(43, "Other shortcut", "/usr/bin/other");
+  s.host.collectionStore.deckDesktopApps.apps = new Set(s.shortcuts.keys());
+  await s.open(); await s.reload()();
+  assert.equal(count(s, "add"), 0); assert.equal(count(s, "run"), 2);
+  assert.equal(s.calls.find(c => c[0] === "exe")[1], 42);
+  assert.equal(s.shortcuts.get(43).display_name, "Other shortcut");
+});
+
+test("Steam's keys-only collection need not implement Symbol.iterator", async () => {
+  const s = setup(); s.seed(42); delete s.shortcuts.get(42).appid;
+  s.host.collectionStore.deckDesktopApps.apps = { keys: () => s.shortcuts.keys() };
+  await s.open(); await s.reload()();
+  assert.equal(count(s, "add"), 0); assert.equal(count(s, "run"), 2);
+});
+
+test("an empty live ID Set permits one creation and reuses it after reload", async () => {
+  const s = setup(); const ids = new Set();
+  s.host.collectionStore.deckDesktopApps.apps = ids;
+  const create = s.host.SteamClient.Apps.AddShortcut;
+  s.host.SteamClient.Apps.AddShortcut = async (...args) => { const id = await create(...args); ids.add(id >>> 0); return id; };
+  await s.open(); await s.reload()();
+  assert.equal(count(s, "add"), 1); assert.equal(ids.size, 1); assert.equal(count(s, "run"), 2);
+});
+
+test("unknown collection format fails cleanly without adding a shortcut", async () => {
+  const s = setup(); s.host.collectionStore.deckDesktopApps.apps = {};
+  await assert.rejects(s.open(), /library is not ready/);
+  assert.deepEqual(s.calls, []);
+});
+
+test("unloaded overviews block new additions until the existing shortcut can be identified", async () => {
+  const s = setup(); s.seed(42);
+  const lookup = s.host.appStore.GetAppOverviewByAppID;
+  s.host.appStore.GetAppOverviewByAppID = () => null;
+  await assert.rejects(s.open(), /still loading non-Steam apps/);
+  assert.deepEqual(s.calls, []);
+  s.host.appStore.GetAppOverviewByAppID = lookup;
+  await s.open(); assert.equal(count(s, "add"), 0); assert.equal(count(s, "run"), 1);
 });
 
 test("several old plugin entries are reused without creating another", async () => {
